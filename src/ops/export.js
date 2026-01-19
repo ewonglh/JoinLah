@@ -1,5 +1,5 @@
 const { Scenes } = require('telegraf');
-const { getEventsByOrganiser, getRegistrationsForExport } = require('../db/queries');
+const { getEventsByOrganiser, getRegistrationsForExport } = require('./db/organiser');
 const ExcelJS = require('exceljs');
 
 const exportWizard = new Scenes.WizardScene(

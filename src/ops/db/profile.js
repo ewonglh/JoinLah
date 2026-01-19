@@ -1,45 +1,38 @@
 const supabase = require('./client');
 
-async function getOrCreateUser(telegramId, profile) {
-    const { data: user, error } = await supabase
+async function getOrCreateUser(telegramUserId, profile = {}) {
+    const { name, email, phone, telegram_username, is_caregiver = false } = profile;
+
+    const { data, error } = await supabase
         .from('users')
-        .select('*')
-        .eq('id', telegramId.toString())
+        .upsert({
+            telegram_user_id: telegramUserId,
+            telegram_username,
+            name,
+            email,
+            phone,
+            is_caregiver,
+            updated_at: new Date()
+        }, { onConflict: 'telegram_user_id' })
+        .select()
         .single();
 
-    if (error && error.code !== 'PGRST116') {
-        console.error('Error fetching user:', error);
+    if (error) {
+        console.error('Error in getOrCreateUser:', error);
         return null;
     }
-
-    if (!user) {
-        const { data: newUser, error: createError } = await supabase
-            .from('users')
-            .insert([{
-                id: telegramId.toString(),
-                firstName: profile.firstName || '',
-                lastName: profile.lastName || '',
-                username: profile.username || '',
-                role: 'user',
-                profileComplete: false
-            }])
-            .select()
-            .single();
-
-        if (createError) {
-            console.error('Error creating user:', createError);
-            return null;
-        }
-        return newUser;
-    }
-    return user;
+    return data;
 }
 
-async function updateUserProfile(userId, data) {
+async function updateUserProfile(telegramUserId, data) {
+    // Avoid updating PK or immutable fields if they are passed in 'data'
     const { data: updatedUser, error } = await supabase
         .from('users')
-        .update(data)
-        .eq('id', userId.toString())
+        .update({
+            ...data,
+            updated_at: new Date()
+        })
+        .eq('telegram_user_id', telegramUserId)
         .select()
         .single();
 
