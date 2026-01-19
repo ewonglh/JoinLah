@@ -45,7 +45,13 @@ async function updateEvent(eventId, updates) {
 async function getEvent(eventId) {
     const { data, error } = await supabase
         .from('events')
-        .select('*')
+        .select(`
+            *,
+            organiser:users!organiser_telegram_id (
+                name,
+                telegram_username
+            )
+        `)
         .eq('id', eventId)
         .single();
 

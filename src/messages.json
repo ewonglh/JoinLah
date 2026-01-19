@@ -39,7 +39,7 @@
     },
     "signup": {
         "eventNotFound": "❌ Sorry, this event was not found.",
-        "card": "🌟 *{name}* 🌟\n\n📍 *Location:* {location}\n📅 *Date:* {date}\n\nThis event provides support for our community. Join us! ❤️",
+        "card": "🌟 *{name}* 🌟\n\n📍 *Location:* {location}\n📅 *Date:* {date}\n👤 *Hosted by:* {organiser}\n\nThis event provides support for our community. Join us! ❤️",
         "askRole": "Are you signing up as a Beneficiary (someone needing support) or as an Organiser?",
         "organiserSwitch": "🛠️ You are now registered as an Organiser. Switching to Dashboard...",
         "askBeneficiaryName": "What is the FULL NAME of the beneficiary?",
