@@ -1,6 +1,11 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 const { Scenes, Markup } = require('telegraf');
 const { getEventsByOrganiser, getEventRegistrationCount } = require('./db/organiser');
+=======
+const { Scenes } = require('telegraf');
+const { getEventsByOrganiser, getEventRegistrationCount } = require('../db/queries');
+>>>>>>> 4499122 (Fix issues with sending alerts)
 
 const eventSummaryWizard = new Scenes.WizardScene(
     'EVENT_SUMMARY_WIZARD',
@@ -130,7 +135,7 @@ eventSummaryWizard.action('home', (ctx) => ctx.scene.enter('ORGANISER_SCENE'));
                 summary += `\n📝 *Description:* ${targetEvent.description}\n`;
             }
 
-            await ctx.replyWithMarkdown(summary);
+            await ctx.replyWithMarkdownV2(summary);
         } catch (err) {
             console.error(err);
             ctx.reply('Error fetching registration data.');
