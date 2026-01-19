@@ -1,15 +1,17 @@
 const { Scenes, Markup } = require('telegraf');
-const db = require('./db/organiser');
+const db = require('../db/queries');
+const { getMessage } = require('../utils/messages');
 
 const organiserScene = new Scenes.WizardScene(
     'ORGANISER_SCENE',
     async (ctx) => {
-        if (!(await db.isAdmin(ctx.from.id))) {
-            await ctx.reply('⛔ Access denied. You are not an organiser.');
-            return ctx.scene.leave();
-        }
+        // In new schema, any user can be an organiser. We just ensure they exist.
+        await db.getOrCreateUser(ctx.from.id, {
+            name: ctx.from.first_name,
+            telegram_username: ctx.from.username
+        });
 
-        await ctx.reply('🛠️ *Organiser Dashboard*', {
+        await ctx.reply(getMessage('organiser.dashboard'), {
             parse_mode: 'Markdown',
             ...Markup.inlineKeyboard([
                 [Markup.button.callback('🆕 Create New Event', 'create')],
@@ -31,12 +33,20 @@ const organiserScene = new Scenes.WizardScene(
             return ctx.wizard.next();
         } else if (action === 'remind') {
             const events = await db.getAllEvents();
-            const buttons = events.map(e => [Markup.button.callback(e.name, `remind_${e.id}`)]);
+            if (!events || events.length === 0) {
+                await ctx.reply('No events found.');
+                return ctx.scene.leave();
+            }
+            const buttons = events.map(e => [Markup.button.callback(e.title || e.name || 'Untitled', `remind_${e.id}`)]);
             await ctx.reply('Select event to send reminders for:', Markup.inlineKeyboard(buttons));
             return ctx.wizard.selectStep(4);
         } else if (action === 'stats') {
             const events = await db.getAllEvents();
-            const buttons = events.map(e => [Markup.button.callback(e.name, `stats_${e.id}`)]);
+            if (!events || events.length === 0) {
+                await ctx.reply('No events found.');
+                return ctx.scene.leave();
+            }
+            const buttons = events.map(e => [Markup.button.callback(e.title || e.name || 'Untitled', `stats_${e.id}`)]);
             await ctx.reply('Select event to view registrations:', Markup.inlineKeyboard(buttons));
             return ctx.wizard.selectStep(4);
         } else if (action === 'preview') {
@@ -45,32 +55,35 @@ const organiserScene = new Scenes.WizardScene(
             await ctx.reply('Select event to preview:', Markup.inlineKeyboard(buttons));
             return ctx.wizard.selectStep(4);
         } else {
-            await ctx.reply('Exited dashboard.');
+            await ctx.reply(getMessage('organiser.exited'));
             return ctx.scene.leave();
         }
     },
     // Step for "Create Event" - Get Name
     async (ctx) => {
-        if (!ctx.message || !ctx.message.text) return ctx.reply('Please enter a valid name.');
+        if (!ctx.message || !ctx.message.text) return ctx.reply(getMessage('errors.invalidName'));
         ctx.wizard.state.newName = ctx.message.text;
-        await ctx.reply('Great! Now enter the DATE of the event (e.g. 2026-03-20):');
+        await ctx.reply('Please enter the DATE and TIME (YYYY-MM-DD HH:mm):');
         return ctx.wizard.next();
     },
     // Step for "Create Event" - Get Date
     async (ctx) => {
-        if (!ctx.message || !ctx.message.text) return ctx.reply('Please enter a valid date.');
+        if (!ctx.message || !ctx.message.text) return ctx.reply(getMessage('errors.invalidDate'));
         ctx.wizard.state.newDate = ctx.message.text;
-        await ctx.reply('Last step: Enter the LOCATION:');
+        await ctx.reply(getMessage('organiser.createLocation'));
         return ctx.wizard.next();
     },
     // Step for "Create Event" - Get Location & Finalize
     async (ctx) => {
-        if (!ctx.message || !ctx.message.text) return ctx.reply('Please enter a valid location.');
+        if (!ctx.message || !ctx.message.text) return ctx.reply(getMessage('errors.invalidLocation'));
         const state = ctx.wizard.state;
         const newEvent = await db.createEvent({
-            name: state.newName,
-            date: state.newDate,
-            location: ctx.message.text
+            title: state.newName || state.title, // Handle both just in case
+            dateTime: state.newDate || state.dateTime,
+            location: ctx.message.text,
+            organiserTelegramId: ctx.from.id,
+            capacity: 100,
+            description: 'Created via Wizard'
         });
 
         await ctx.replyWithMarkdown(`✅ *Event Created!*\n\n` +
@@ -78,7 +91,7 @@ const organiserScene = new Scenes.WizardScene(
             `Registration Link: \`https://t.me/${ctx.botInfo.username}?start=ev_${newEvent.id}\``);
         return ctx.scene.leave();
     },
-    // Handler for Reminders/Stats (Step 4)
+    // Unified Handler for Selection (Step 5)
     async (ctx) => {
         if (!ctx.callbackQuery) return;
         const data = ctx.callbackQuery.data;
@@ -86,19 +99,21 @@ const organiserScene = new Scenes.WizardScene(
 
         if (data.startsWith('remind_')) {
             const eventId = data.replace('remind_', '');
-            const regs = await db.getRegistrationsForEvent(eventId);
+            const regs = await db.listRegistrationsForEvent(eventId);
             await ctx.reply(`✅ Reminders sent to all ${regs.length} people registered!`);
             return ctx.scene.leave(); // Or go back to menu?
         } else if (data.startsWith('stats_')) {
             const eventId = data.replace('stats_', '');
-            const regs = await db.getRegistrationsForEvent(eventId);
+            const regs = await db.listRegistrationsForEvent(eventId);
 
             if (regs.length === 0) {
                 await ctx.reply('No registrations yet.');
             } else {
                 let report = `📊 *Registrations for Event ${eventId}*\n\n`;
                 regs.forEach((r, i) => {
-                    report += `${i + 1}. ${r.user.firstName} (${r.role === 'organiser' ? 'Organiser' : 'Beneficiary'})\n`;
+                    const name = r.user_name || r.participant_name || 'Unknown';
+                    const role = r.status || 'Registered'; // API doesn't return role, use status
+                    report += `${i + 1}. ${name} (${role})\n`;
                 });
                 await ctx.replyWithMarkdown(report);
             }
