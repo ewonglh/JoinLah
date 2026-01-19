@@ -5,10 +5,12 @@ const { formatEventDate } = require('./helpers/formatDate');
 
 // Helper for event card
 function getEventCard(event) {
+    const organiserName = event.organiser ? (event.organiser.name || event.organiser.telegram_username) : 'Unknown';
     return getMessage('signup.card', {
         name: event.title,
         location: event.location,
-        date: new Date(event.date_time).toLocaleString()
+        date: formatEventDate(event.date_time || event.date),
+        organiser: organiserName
     });
 }
 
@@ -131,7 +133,7 @@ const signupScene = new Scenes.WizardScene(
 
             await ctx.replyWithMarkdown(getMessage('signup.success', {
                 eventName: state.event.title,
-                eventDate: new Date(state.event.date_time).toLocaleString(),
+                eventDate: formatEventDate(state.event.date_time || state.event.date),
                 eventLocation: state.event.location
             }));
         } else {
