@@ -8,6 +8,7 @@ const {
     handleTimePicker,
     getEventLocation,
     getEventDescription,
+    getEventPhoto,
     getEventCapacityAndFinalize
 } = require('./steps/createEvent');
 const {
@@ -28,11 +29,12 @@ const { handleRemindStats } = require('./steps/remindStats');
  * - Step 4: Create Event - Time Picker (handleTimePicker)
  * - Step 5: Create Event - Get Location (getEventLocation)
  * - Step 6: Create Event - Get Description (getEventDescription)
- * - Step 7: Create Event - Get Capacity & Finalize (getEventCapacityAndFinalize)
- * - Step 8: Preview Event Selection Handler (handlePreviewSelection)
- * - Step 9: Preview Actions (handlePreviewActions)
- * - Step 10: Handle Edit Input (handleEditInput)
- * - Step 11: Remind/Stats Handler (handleRemindStats)
+ * - Step 7: Create Event - Get Photo (getEventPhoto)
+ * - Step 8: Create Event - Get Capacity & Finalize (getEventCapacityAndFinalize)
+ * - Step 9: Preview Event Selection Handler (handlePreviewSelection)
+ * - Step 10: Preview Actions (handlePreviewActions)
+ * - Step 11: Handle Edit Input (handleEditInput)
+ * - Step 12: Remind/Stats Handler (handleRemindStats)
  */
 const organiserScene = new Scenes.WizardScene(
     'ORGANISER_SCENE',
@@ -43,11 +45,12 @@ const organiserScene = new Scenes.WizardScene(
     handleTimePicker,                 // Step 4
     getEventLocation,                 // Step 5
     getEventDescription,              // Step 6
-    getEventCapacityAndFinalize,      // Step 7
-    handlePreviewSelection,           // Step 8
-    handlePreviewActions,             // Step 9
-    handleEditInput,                  // Step 10
-    handleRemindStats                 // Step 11
+    getEventPhoto,                    // Step 7
+    getEventCapacityAndFinalize,      // Step 8
+    handlePreviewSelection,           // Step 9
+    handlePreviewActions,             // Step 10
+    handleEditInput,                  // Step 11
+    handleRemindStats                 // Step 12
 );
 
 module.exports = organiserScene;
