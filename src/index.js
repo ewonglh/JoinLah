@@ -64,13 +64,20 @@ bot.start(async (ctx) => {
         return ctx.scene.enter('SETUP_PROFILE_SCENE');
     }
 
-    // Dashboard selection for registered users
+    // Dashboard selection based on organiser status
+    const buttons = [
+        [Markup.button.callback('👤 My Profile', 'dashboard_participant')]
+    ];
+
+    if (user.is_organiser) {
+        buttons.push([Markup.button.callback('📅 Organiser Dashboard', 'dashboard_organiser')]);
+    } else {
+        buttons.push([Markup.button.callback('🎫 Become an Organiser', 'become_organiser')]);
+    }
+
     ctx.reply(
-        'Welcome back! Please select a dashboard:',
-        Markup.inlineKeyboard([
-            [Markup.button.callback('👤 Participant Dashboard', 'dashboard_participant')],
-            [Markup.button.callback('📅 Organiser Dashboard', 'dashboard_organiser')]
-        ])
+        `Welcome back, ${user.name || ctx.from.first_name}! 👋\n\nWhat would you like to do?`,
+        Markup.inlineKeyboard(buttons)
     );
 });
 
@@ -80,33 +87,73 @@ bot.action('dashboard_participant', (ctx) => {
     ctx.scene.enter('PROFILE_SCENE');
 });
 
-bot.action('dashboard_organiser', (ctx) => {
+bot.action('dashboard_organiser', async (ctx) => {
     ctx.answerCbQuery();
+    const user = await db.getOrCreateUser(ctx.from.id, {});
+
+    if (!user.is_organiser) {
+        return ctx.reply('❌ You need to become an organiser first. Use /becomeorganiser');
+    }
     ctx.scene.enter('ORGANISER_SCENE');
 });
 
+bot.action('become_organiser', async (ctx) => {
+    ctx.answerCbQuery();
+    await db.updateUser(ctx.from.id, { is_organiser: true });
+    await ctx.reply('🎉 Congratulations! You are now an organiser.\n\nYou can access the Organiser Dashboard using /organiser or /start.');
+});
+
 // Commands
-bot.command('organiser', (ctx) => ctx.scene.enter('ORGANISER_SCENE'));
+bot.command('organiser', async (ctx) => {
+    const user = await db.getOrCreateUser(ctx.from.id, {});
+
+    if (!user.is_organiser) {
+        return ctx.reply('❌ You need to become an organiser first. Use /becomeorganiser');
+    }
+    ctx.scene.enter('ORGANISER_SCENE');
+});
+
+bot.command('becomeorganiser', async (ctx) => {
+    const user = await db.getOrCreateUser(ctx.from.id, {});
+
+    if (user.is_organiser) {
+        return ctx.reply('✅ You are already an organiser! Use /organiser to access the dashboard.');
+    }
+
+    await db.updateUser(ctx.from.id, { is_organiser: true });
+    await ctx.reply('🎉 Congratulations! You are now an organiser.\n\nYou can access the Organiser Dashboard using /organiser');
+});
+
 bot.command('profile', (ctx) => ctx.scene.enter('PROFILE_SCENE'));
 
-bot.help((ctx) => {
-    const helpText = `
+bot.help(async (ctx) => {
+    const user = await db.getOrCreateUser(ctx.from.id, {});
+
+    let helpText = `
 *Available Commands:*
 
 *General:*
-/start - Start the bot (Dashboard selection)
+/start - Start the bot
 /profile - View or edit your profile
 /help - Show this help message
+`;
 
+    if (user.is_organiser) {
+        helpText += `
 *Organiser Tools:*
 /organiser - Access Organiser Dashboard
-/newevent - Create a new event
-/editevent - Edit an existing event
-/eventsummary - View event signups
 /export - Download participant list (.xlsx)
-    `;
-    ctx.reply(helpText, { parse_mode: 'Markdown' });
+`;
+    } else {
+        helpText += `
+*Want to create events?*
+/becomeorganiser - Become an organiser
+`;
+    }
+
+    ctx.reply(helpText.trim(), { parse_mode: 'Markdown' });
 });
+
 
 // Launch bot
 console.log('Bot is starting...');
