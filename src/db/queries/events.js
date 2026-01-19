@@ -56,9 +56,20 @@ async function getEvent(eventId) {
     return data;
 }
 
+async function getAllEvents() {
+    const { data, error } = await supabase
+        .from('events')
+        .select('*')
+        .order('date_time', { ascending: false });
+
+    if (error) throw error;
+    return data;
+}
+
 module.exports = {
     createEvent,
     getEventsByOrganiser,
+    getAllEvents, // Exported
     updateEvent,
     getEvent
 };

@@ -14,10 +14,10 @@ const organiserScene = new Scenes.WizardScene(
         await ctx.reply(getMessage('organiser.dashboard'), {
             parse_mode: 'Markdown',
             ...Markup.inlineKeyboard([
-                [Markup.button.callback(getMessage('buttons.createEvent'), 'create')],
-                [Markup.button.callback(getMessage('buttons.sendReminders'), 'remind')],
-                [Markup.button.callback(getMessage('buttons.viewRegistrations'), 'stats')],
-                [Markup.button.callback(getMessage('buttons.exit'), 'exit')]
+                [Markup.button.callback('🆕 Create New Event', 'create')],
+                [Markup.button.callback('📢 Send Reminders', 'remind')],
+                [Markup.button.callback('📊 View Registrations', 'stats')],
+                [Markup.button.callback('🔙 Exit', 'exit')]
             ])
         });
         return ctx.wizard.next();
@@ -28,46 +28,42 @@ const organiserScene = new Scenes.WizardScene(
         await ctx.answerCbQuery();
 
         if (action === 'create') {
-            await ctx.reply(getMessage('organiser.createName'));
+            await ctx.reply('Please enter the NAME of the new event:');
             return ctx.wizard.next();
         } else if (action === 'remind') {
-            const events = await db.getEventsByOrganiser(ctx.from.id);
-            if (!events.length) {
-                await ctx.reply('You have no events.');
+            const events = await db.getAllEvents();
+            if (!events || events.length === 0) {
+                await ctx.reply('No events found.');
                 return ctx.scene.leave();
             }
-            const buttons = events.map(e => [Markup.button.callback(e.title, `remind_${e.id}`)]);
-            await ctx.reply(getMessage('organiser.selectReminder'), Markup.inlineKeyboard(buttons));
+            const buttons = events.map(e => [Markup.button.callback(e.title || e.name || 'Untitled', `remind_${e.id}`)]);
+            await ctx.reply('Select event to send reminders for:', Markup.inlineKeyboard(buttons));
             return ctx.wizard.selectStep(4);
         } else if (action === 'stats') {
-            const events = await db.getEventsByOrganiser(ctx.from.id);
-            if (!events.length) {
-                await ctx.reply('You have no events.');
+            const events = await db.getAllEvents();
+            if (!events || events.length === 0) {
+                await ctx.reply('No events found.');
                 return ctx.scene.leave();
             }
-            const buttons = events.map(e => [Markup.button.callback(e.title, `stats_${e.id}`)]);
-            await ctx.reply(getMessage('organiser.selectStats'), Markup.inlineKeyboard(buttons));
+            const buttons = events.map(e => [Markup.button.callback(e.title || e.name || 'Untitled', `stats_${e.id}`)]);
+            await ctx.reply('Select event to view registrations:', Markup.inlineKeyboard(buttons));
             return ctx.wizard.selectStep(4);
         } else {
             await ctx.reply(getMessage('organiser.exited'));
             return ctx.scene.leave();
         }
     },
-    // Step for "Create Event" - Get Name (Title)
+    // Step for "Create Event" - Get Name
     async (ctx) => {
         if (!ctx.message || !ctx.message.text) return ctx.reply(getMessage('errors.invalidName'));
-        ctx.wizard.state.title = ctx.message.text;
-        await ctx.reply(getMessage('organiser.createDate')); // Expecting YYYY-MM-DD HH:mm or just text? Assuming text for now but schema needs Date.
+        ctx.wizard.state.newName = ctx.message.text;
+        await ctx.reply('Please enter the DATE and TIME (YYYY-MM-DD HH:mm):');
         return ctx.wizard.next();
     },
     // Step for "Create Event" - Get Date
     async (ctx) => {
         if (!ctx.message || !ctx.message.text) return ctx.reply(getMessage('errors.invalidDate'));
-        // Basic parsing attempt, assuming user enters ISO-like or we just try constructor
-        const dateInput = ctx.message.text;
-        // Ideally we'd have a stronger validation here
-        ctx.wizard.state.dateTime = dateInput;
-
+        ctx.wizard.state.newDate = ctx.message.text;
         await ctx.reply(getMessage('organiser.createLocation'));
         return ctx.wizard.next();
     },
@@ -75,34 +71,21 @@ const organiserScene = new Scenes.WizardScene(
     async (ctx) => {
         if (!ctx.message || !ctx.message.text) return ctx.reply(getMessage('errors.invalidLocation'));
         const state = ctx.wizard.state;
+        const newEvent = await db.createEvent({
+            title: state.newName || state.title, // Handle both just in case
+            dateTime: state.newDate || state.dateTime,
+            location: ctx.message.text,
+            organiserTelegramId: ctx.from.id,
+            capacity: 100,
+            description: 'Created via Wizard'
+        });
 
-        try {
-            // Try to construct a valid date
-            const dateObj = new Date(state.dateTime);
-            if (isNaN(dateObj.getTime())) {
-                throw new Error('Invalid Date');
-            }
-
-            const newEvent = await db.createEvent({
-                title: state.title,
-                organiserTelegramId: ctx.from.id,
-                dateTime: dateObj.toISOString(),
-                location: ctx.message.text,
-                capacity: 100, // Default capacity
-                description: 'Created via Wizard'
-            });
-
-            await ctx.replyWithMarkdown(getMessage('organiser.created', {
-                id: newEvent.id,
-                link: `https://t.me/${ctx.botInfo.username}?start=ev_${newEvent.id}`
-            }));
-        } catch (e) {
-            await ctx.reply('Failed to create event. Please ensure date is valid (YYYY-MM-DD HH:mm) and try again.');
-            console.error(e);
-        }
+        await ctx.replyWithMarkdown(`✅ *Event Created!*\n\n` +
+            `ID: \`${newEvent.id}\`\n` +
+            `Registration Link: \`https://t.me/${ctx.botInfo.username}?start=ev_${newEvent.id}\``);
         return ctx.scene.leave();
     },
-    // Handler for Reminders/Stats (Step 4)
+    // Unified Handler for Selection (Step 5)
     async (ctx) => {
         if (!ctx.callbackQuery) return;
         const data = ctx.callbackQuery.data;
@@ -111,23 +94,47 @@ const organiserScene = new Scenes.WizardScene(
         if (data.startsWith('remind_')) {
             const eventId = data.replace('remind_', '');
             const regs = await db.listRegistrationsForEvent(eventId);
-            await ctx.reply(getMessage('organiser.remindersSent', { count: regs.length }));
+            await ctx.reply(`✅ Reminders sent to all ${regs.length} people registered!`);
             return ctx.scene.leave();
         } else if (data.startsWith('stats_')) {
             const eventId = data.replace('stats_', '');
             const regs = await db.listRegistrationsForEvent(eventId);
 
             if (regs.length === 0) {
-                await ctx.reply(getMessage('organiser.noRegistrations'));
+                await ctx.reply('No registrations yet.');
             } else {
-                let report = getMessage('organiser.statsHeader', { eventId });
+                let report = `📊 *Registrations for Event ${eventId}*\n\n`;
                 regs.forEach((r, i) => {
-                    report += `${i + 1}. ${r.participant_name} (via ${r.user_name})\n`;
+                    const name = r.user_name || r.participant_name || 'Unknown';
+                    const role = r.status || 'Registered'; // API doesn't return role, use status
+                    report += `${i + 1}. ${name} (${role})\n`;
                 });
                 await ctx.replyWithMarkdown(report);
             }
             return ctx.scene.leave();
         }
+    },
+    // Handler for Edit Field Selection (Step 6)
+    async (ctx) => {
+        if (!ctx.callbackQuery) return;
+        const field = ctx.callbackQuery.data.replace('field_', '');
+        await ctx.answerCbQuery();
+        if (field === 'cancel') return ctx.scene.leave();
+        ctx.wizard.state.editField = field;
+        await ctx.reply(`Enter the new value for ${field}:`);
+        return ctx.wizard.next();
+    },
+    // Handler for Edit Value Entry (Step 7)
+    async (ctx) => {
+        if (!ctx.message || !ctx.message.text) return ctx.reply('Please enter text.');
+        const val = ctx.message.text;
+        const field = ctx.wizard.state.editField;
+        const updates = {};
+        updates[field] = field === 'capacity' ? parseInt(val) : val;
+
+        await db.updateEvent(ctx.wizard.state.editId, updates);
+        await ctx.reply('✅ Event updated successfully!');
+        return ctx.scene.leave();
     }
 );
 
