@@ -1,163 +1,142 @@
-const { Scenes, Markup } = require('telegraf');
-const { getEventsByOrganiser, updateEvent } = require('./db/organiser');
+const { Scenes } = require('telegraf');
+const { getEventsByOrganiser, updateEvent } = require('../db/queries');
 
 const editEventWizard = new Scenes.WizardScene(
     'EDIT_EVENT_WIZARD',
-    // Step 1: List user's events via buttons
+    // Step 1: List user's events and ask for selection
     async (ctx) => {
         try {
             const events = await getEventsByOrganiser(ctx.from.id);
 
             if (!events || events.length === 0) {
-                await ctx.reply('You haven\'t created any events yet.');
-                return ctx.scene.enter('ORGANISER_SCENE');
+                ctx.reply('You haven\'t created any events yet.');
+                return ctx.scene.leave();
             }
 
-            const buttons = events.map(e => [Markup.button.callback(e.title, `edit_sel_${e.id}`)]);
-            buttons.push([Markup.button.callback('❌ Cancel', 'cancel_wizard')]);
+            ctx.wizard.state.events = events;
+            let message = 'Select an event to edit by typing its number:\n\n';
+            events.forEach((event, index) => {
+                message += `${index + 1}. ${event.title} (${new Date(event.date_time).toLocaleDateString()})\n`;
+            });
 
-            await ctx.reply('✏️ *Select an event to edit:*', Markup.inlineKeyboard(buttons));
+            ctx.reply(message);
             return ctx.wizard.next();
         } catch (err) {
             console.error(err);
-            await ctx.reply('Error fetching your events.');
-            return ctx.scene.enter('ORGANISER_SCENE');
+            ctx.reply('Error fetching your events. Please try again later.');
+            return ctx.scene.leave();
         }
     },
-    // Step 2: Handle selection, Prompt for Title
-    async (ctx) => {
-        if (!ctx.callbackQuery) return ctx.reply('Please use the buttons.');
-        const data = ctx.callbackQuery.data;
-        await ctx.answerCbQuery();
+    // Step 2: Record selection, Prompt for Title
+    (ctx) => {
+        const selection = parseInt(ctx.message?.text);
+        const events = ctx.wizard.state.events;
 
-        if (data === 'cancel_wizard') return cancel(ctx);
-        const eventId = data.replace('edit_sel_', '');
+        if (isNaN(selection) || selection < 1 || selection > events.length) {
+            ctx.reply('Invalid selection. Please enter a number from the list.');
+            return;
+        }
 
-        const events = await getEventsByOrganiser(ctx.from.id);
-        const target = events.find(e => e.id === eventId);
-
-        if (!target) return ctx.scene.enter('ORGANISER_SCENE');
-
-        ctx.wizard.state.targetEvent = target;
+        ctx.wizard.state.targetEvent = events[selection - 1];
         ctx.wizard.state.updates = {};
 
-        await ctx.reply(`Editing: *${target.title}*\n\nEnter new title (or /skip):`,
-            Markup.inlineKeyboard([Markup.button.callback('❌ Cancel', 'cancel_wizard')])
-        );
+        ctx.reply(`Editing: "${ctx.wizard.state.targetEvent.title}"\n\nCurrent Title: ${ctx.wizard.state.targetEvent.title}\n\nEnter a new title or send /skip.`);
         return ctx.wizard.next();
     },
     // Step 3: Record Title, Prompt for Date
-    async (ctx) => {
-        if (ctx.callbackQuery?.data === 'cancel_wizard') return cancel(ctx);
-        if (ctx.message?.text && ctx.message.text !== '/skip') {
+    (ctx) => {
+        if (ctx.message?.text !== '/skip') {
             ctx.wizard.state.updates.title = ctx.message.text;
         }
-
         const currentEvent = ctx.wizard.state.targetEvent;
         const currentDate = new Date(currentEvent.date_time).toISOString().split('T')[0];
-
-        await ctx.reply(`📅 Current Date: ${currentDate}\n\nEnter new date (YYYY-MM-DD) or /skip:`,
-            Markup.inlineKeyboard([Markup.button.callback('❌ Cancel', 'cancel_wizard')])
-        );
+        ctx.reply(`Current Date: ${currentDate}\n\nEnter a new date (YYYY-MM-DD) or send /skip.`);
         return ctx.wizard.next();
     },
     // Step 4: Record Date, Prompt for Time
-    async (ctx) => {
-        if (ctx.callbackQuery?.data === 'cancel_wizard') return cancel(ctx);
-        if (ctx.message?.text && ctx.message.text !== '/skip') {
+    (ctx) => {
+        if (ctx.message?.text !== '/skip') {
             ctx.wizard.state.event_date = ctx.message.text;
         }
-
         const currentEvent = ctx.wizard.state.targetEvent;
         const currentTime = new Date(currentEvent.date_time).toISOString().split('T')[1].substring(0, 5);
-
-        await ctx.reply(`⏰ Current Time: ${currentTime}\n\nEnter new time (HH:mm) or /skip:`,
-            Markup.inlineKeyboard([Markup.button.callback('❌ Cancel', 'cancel_wizard')])
-        );
+        ctx.reply(`Current Time: ${currentTime}\n\nEnter a new time (HH:mm) or send /skip.`);
         return ctx.wizard.next();
     },
     // Step 5: Record Time, Prompt for Location
-    async (ctx) => {
-        if (ctx.callbackQuery?.data === 'cancel_wizard') return cancel(ctx);
-        if (ctx.message?.text && ctx.message.text !== '/skip') {
+    (ctx) => {
+        if (ctx.message?.text !== '/skip') {
             ctx.wizard.state.event_time = ctx.message.text;
         }
-
-        await ctx.reply(`📍 Current Location: ${ctx.wizard.state.targetEvent.location}\n\nEnter new location or /skip:`,
-            Markup.inlineKeyboard([Markup.button.callback('❌ Cancel', 'cancel_wizard')])
-        );
+        ctx.reply(`Current Location: ${ctx.wizard.state.targetEvent.location}\n\nEnter a new location or send /skip.`);
         return ctx.wizard.next();
     },
     // Step 6: Record Location, Prompt for Capacity
-    async (ctx) => {
-        if (ctx.callbackQuery?.data === 'cancel_wizard') return cancel(ctx);
-        if (ctx.message?.text && ctx.message.text !== '/skip') {
+    (ctx) => {
+        if (ctx.message?.text !== '/skip') {
             ctx.wizard.state.updates.location = ctx.message.text;
         }
-
-        await ctx.reply(`👥 Current Capacity: ${ctx.wizard.state.targetEvent.capacity}\n\nEnter new capacity (Number) or /skip:`,
-            Markup.inlineKeyboard([Markup.button.callback('❌ Cancel', 'cancel_wizard')])
-        );
+        ctx.reply(`Current Capacity: ${ctx.wizard.state.targetEvent.capacity}\n\nEnter a new capacity (Number) or send /skip.`);
         return ctx.wizard.next();
     },
     // Step 7: Record Capacity, Prompt for Description
-    async (ctx) => {
-        if (ctx.callbackQuery?.data === 'cancel_wizard') return cancel(ctx);
-        if (ctx.message?.text && ctx.message.text !== '/skip') {
-            const cap = parseInt(ctx.message.text);
-            if (!isNaN(cap)) ctx.wizard.state.updates.capacity = cap;
+    (ctx) => {
+        if (ctx.message?.text !== '/skip') {
+            const capacity = parseInt(ctx.message.text);
+            if (isNaN(capacity)) {
+                ctx.reply('Please enter a valid number for capacity.');
+                return;
+            }
+            ctx.wizard.state.updates.capacity = capacity;
         }
-
-        await ctx.reply('📝 Enter new description (or /skip):',
-            Markup.inlineKeyboard([Markup.button.callback('❌ Cancel', 'cancel_wizard')])
-        );
+        ctx.reply(`Current Description: ${ctx.wizard.state.targetEvent.description}\n\nEnter a new description or send /skip.`);
         return ctx.wizard.next();
     },
-    // Step 8: Finalize and Save
-    async (ctx) => {
-        if (ctx.callbackQuery?.data === 'cancel_wizard') return cancel(ctx);
-        if (ctx.message?.text && ctx.message.text !== '/skip') {
+    // Step 8: Record Description, Prompt for Photo
+    (ctx) => {
+        if (ctx.message?.text !== '/skip') {
             ctx.wizard.state.updates.description = ctx.message.text;
         }
+        ctx.reply('Send a new photo/poster or send /skip.');
+        return ctx.wizard.next();
+    },
+    // Step 9: Record Photo and Save Updates
+    async (ctx) => {
+        if (ctx.message?.photo) {
+            const photo = ctx.message.photo[ctx.message.photo.length - 1];
+            ctx.wizard.state.updates.image_url = photo.file_id;
+        }
 
-        // Handle combined date/time
+        // Handle combined date/time update
         if (ctx.wizard.state.event_date || ctx.wizard.state.event_time) {
-            const current = ctx.wizard.state.targetEvent;
-            const fullStr = new Date(current.date_time).toISOString();
-            const [d, t] = fullStr.split('T');
+            const currentEvent = ctx.wizard.state.targetEvent;
+            const currentFullDate = new Date(currentEvent.date_time).toISOString();
+            const [d, t] = currentFullDate.split('T');
+
             const date = ctx.wizard.state.event_date || d;
             const time = ctx.wizard.state.event_time || t.substring(0, 5);
+
             ctx.wizard.state.updates.date_time = new Date(`${date}T${time}:00Z`).toISOString();
         }
 
         if (Object.keys(ctx.wizard.state.updates).length === 0) {
-            await ctx.reply('No changes made.');
-            return ctx.scene.enter('ORGANISER_SCENE');
+            ctx.reply('No changes were made.');
+            return ctx.scene.leave();
         }
+
+        ctx.reply('Updating your event...');
 
         try {
             await updateEvent(ctx.wizard.state.targetEvent.id, ctx.wizard.state.updates);
-            await ctx.reply('✅ Event updated successfully!',
-                Markup.inlineKeyboard([Markup.button.callback('🔙 Dashboard', 'home')])
-            );
+
+            ctx.reply('Success! Your event has been updated.');
         } catch (err) {
             console.error(err);
-            await ctx.reply('❌ Error updating event.');
+            ctx.reply(`Error updating event: ${err.message}`);
         }
-        return ctx.wizard.next();
-    },
-    // Exit handler
-    async (ctx) => {
-        return ctx.scene.enter('ORGANISER_SCENE');
+
+        return ctx.scene.leave();
     }
 );
-
-async function cancel(ctx) {
-    await ctx.answerCbQuery('Action cancelled');
-    return ctx.scene.enter('ORGANISER_SCENE');
-}
-
-editEventWizard.action('cancel_wizard', cancel);
-editEventWizard.action('home', (ctx) => ctx.scene.enter('ORGANISER_SCENE'));
 
 module.exports = editEventWizard;
