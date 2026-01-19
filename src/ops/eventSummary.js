@@ -1,5 +1,5 @@
 const { Scenes } = require('telegraf');
-const { getEventsByOrganiser, getEventRegistrationCount } = require('../db/queries');
+const { getEventsByOrganiser, getEventRegistrationCount } = require('./db/organiser');
 
 const eventSummaryWizard = new Scenes.WizardScene(
     'EVENT_SUMMARY_WIZARD',

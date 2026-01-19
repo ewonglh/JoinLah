@@ -4,9 +4,9 @@ const dbProfile = require('./db/profile');
 
 // Helper for event card
 function getEventCard(event) {
-    return `🌟 *${event.name}* 🌟\n\n` +
+    return `🌟 *${event.title || event.name}* 🌟\n\n` +
         `📍 *Location:* ${event.location}\n` +
-        `📅 *Date:* ${event.date}\n\n` +
+        `📅 *Date:* ${event.date_time || event.date}\n\n` +
         `This event provides support for our community. Join us! ❤️`;
 }
 
@@ -59,9 +59,9 @@ const signupScene = new Scenes.WizardScene(
         ctx.wizard.state.beneficiaryName = providedName;
 
         const profile = ctx.wizard.state.userProfile;
-        const profileName = `${profile.firstName} ${profile.lastName}`.trim();
+        const profileName = (profile.name || '').trim();
 
-        if (providedName.toLowerCase() !== profileName.toLowerCase()) {
+        if (profileName && providedName.toLowerCase() !== profileName.toLowerCase()) {
             await ctx.reply(`The name provided ("${providedName}") is different from your profile name ("${profileName}").\n\nAre you signing up on behalf of this beneficiary?`,
                 Markup.inlineKeyboard([
                     [Markup.button.callback('✅ Yes', 'on_behalf'), Markup.button.callback('❌ No, it\'s for me', 'self')]
@@ -92,7 +92,7 @@ const signupScene = new Scenes.WizardScene(
 
         const state = ctx.wizard.state;
         let summary = `📝 *Beneficiary Registration Summary*\n\n` +
-            `Event: ${state.event.name}\n` +
+            `Event: ${state.event.title || state.event.name}\n` +
             `Beneficiary: ${state.beneficiaryName}\n` +
             (state.onBehalf ? `*On behalf of beneficiary*\n` : '') +
             `Notes: ${state.requirements}\n\nConfirm this registration?`;

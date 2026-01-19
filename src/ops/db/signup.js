@@ -14,14 +14,17 @@ async function getEvent(eventId) {
     return data;
 }
 
-async function createRegistration(userId, eventId, details) {
+async function createRegistration(userTelegramId, eventId, details) {
     const { data, error } = await supabase
         .from('registrations')
         .insert([{
-            userId: userId.toString(),
-            eventId: eventId,
-            ...details,
-            registeredAt: new Date().toISOString()
+            user_telegram_id: userTelegramId,
+            event_id: eventId,
+            participant_name: details.participant_name || details.beneficiaryName,
+            participant_age: details.participant_age || null,
+            status: details.status || 'pending',
+            notes: details.notes || details.requirements || '',
+            created_at: new Date().toISOString()
         }])
         .select()
         .single();

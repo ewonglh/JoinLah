@@ -16,13 +16,10 @@ const setupProfileScene = new Scenes.WizardScene(
     async (ctx) => {
         if (!ctx.message || !ctx.message.text) return ctx.reply('Please enter a valid number.');
         const fullName = ctx.wizard.state.fullName;
-        const [firstName, ...lastNames] = fullName.split(' ');
 
         await db.updateUserProfile(ctx.from.id, {
-            firstName,
-            lastName: lastNames.join(' ') || '',
-            phone: ctx.message.text,
-            profileComplete: true
+            name: fullName,
+            phone: ctx.message.text
         });
 
         await ctx.reply('✅ Profile setup complete!');
@@ -43,15 +40,14 @@ const profileScene = new Scenes.WizardScene(
     'PROFILE_SCENE',
     async (ctx) => {
         const user = await db.getOrCreateUser(ctx.from.id, {
-            firstName: ctx.from.first_name,
-            lastName: ctx.from.last_name,
-            username: ctx.from.username
+            name: `${ctx.from.first_name || ''} ${ctx.from.last_name || ''}`.trim(),
+            telegram_username: ctx.from.username
         });
 
         let profileText = `👤 *Your Profile*\n\n` +
-            `Name: ${user.firstName} ${user.lastName}\n` +
+            `Name: ${user.name || 'Not set'}\n` +
             `Phone: ${user.phone || 'Not set'}\n` +
-            `Role: ${user.role}\n\n` +
+            `Role: ${user.is_caregiver ? 'Caregiver' : 'User'}\n\n` +
             `Would you like to update your details?`;
 
         await ctx.replyWithMarkdown(profileText, Markup.inlineKeyboard([
