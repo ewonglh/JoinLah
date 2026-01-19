@@ -3,25 +3,65 @@
         "eventNotFound": "❌ Event not found. Try /start again.",
         "startOver": "Please start over with /start",
         "unknownCommand": "Unknown command. Please run /help for a list of commands and their purpose.",
-        "unknownInput": "I'm not sure I understand. Type /help to see what I can do."
+        "unknownInput": "I'm not sure I understand. Type /help to see what I can do.",
+        "accessDenied": "⛔ Access denied. You are not an organiser.",
+        "invalidName": "Please enter a valid name.",
+        "invalidDate": "Please enter a valid date.",
+        "invalidLocation": "Please enter a valid location.",
+        "invalidNumber": "Please enter a valid number.",
+        "invalidText": "Please enter valid text."
     },
     "welcome": {
-        "askSelfOrOther": "📅 *{title}*\n{location} • {dateTime}\n\nAre you signing up for yourself or someone else?",
         "regular": "👋 Welcome! Click any event signup link to register."
     },
-    "prompts": {
-        "enterName": "Please enter the {who} full name:",
-        "enterEmail": "Great! Now enter your email:",
-        "confirmRegistration": "✅ *Confirm registration*\n\n👤 {participantName}\n📧 {email}\n📅 {eventTitle}\n\nIs this correct?"
+    "organiser": {
+        "dashboard": "🛠️ *Organiser Dashboard*",
+        "createName": "Please enter the NAME of the new event:",
+        "createDate": "Great! Now enter the DATE of the event (e.g. 2026-03-20):",
+        "createLocation": "Last step: Enter the LOCATION:",
+        "created": "✅ *Event Created!*\n\nID: `{id}`\nRegistration Link: `{link}`",
+        "selectReminder": "Select event to send reminders for:",
+        "remindersSent": "✅ Reminders sent to all {count} people registered!",
+        "selectStats": "Select event to view registrations:",
+        "noRegistrations": "No registrations yet.",
+        "statsHeader": "📊 *Registrations for Event {eventId}*\n\n",
+        "exited": "Exited dashboard."
     },
-    "success": {
-        "registrationConfirmed": "🎉 *Registration confirmed!*\n\n👤 {participantName}\n📅 {eventTitle}\nID: {registrationId}"
+    "profile": {
+        "setupWelcome": "Welcome! Before we get started, please help us complete your profile. What is your full name?",
+        "askPhone": "Thank you! Please enter your contact number:",
+        "setupComplete": "✅ Profile setup complete!",
+        "proceedToEvent": "Now proceeding to event registration...",
+        "view": "👤 *Your Profile*\n\nName: {firstName} {lastName}\nPhone: {phone}\nRole: {role}\n\nWould you like to update your details?",
+        "askBio": "Please enter your updated bio or any additional info.",
+        "menuClosed": "Menu closed.",
+        "updated": "✅ Profile updated!"
+    },
+    "signup": {
+        "eventNotFound": "❌ Sorry, this event was not found.",
+        "card": "🌟 *{name}* 🌟\n\n📍 *Location:* {location}\n📅 *Date:* {date}\n\nThis event provides support for our community. Join us! ❤️",
+        "askRole": "Are you signing up as a Beneficiary (someone needing support) or as an Organiser?",
+        "organiserSwitch": "🛠️ You are now registered as an Organiser. Switching to Dashboard...",
+        "askBeneficiaryName": "What is the FULL NAME of the beneficiary?",
+        "nameMismatch": "The name provided (\"{providedName}\") is different from your profile name (\"{profileName}\").\n\nAre you signing up on behalf of this beneficiary?",
+        "askRequirements": "Please tell us about any specific assistance or items you need:",
+        "summary": "📝 *Beneficiary Registration Summary*\n\nEvent: {eventName}\nBeneficiary: {beneficiaryName}\n{onBehalf}Notes: {requirements}\n\nConfirm this registration?",
+        "onBehalfLabel": "*On behalf of beneficiary*\n",
+        "success": "🎉 Success! Your registration is complete. We will reach out soon.",
+        "cancelled": "Registration cancelled."
     },
     "buttons": {
-        "myself": "👤 Myself",
-        "someoneElse": "❤️ Someone else",
-        "cancel": "❌ Cancel",
-        "confirm": "✅ Yes, register me!",
-        "edit": "❌ Edit details"
+        "createEvent": "🆕 Create New Event",
+        "sendReminders": "📢 Send Reminders",
+        "viewRegistrations": "📊 View Registrations",
+        "exit": "🔙 Exit",
+        "editProfile": "📝 Edit Profile",
+        "back": "🔙 Back",
+        "beneficiary": "💖 Beneficiary",
+        "organiser": "🛠️ Organiser",
+        "yesOnBehalf": "✅ Yes",
+        "noSelf": "❌ No, it's for me",
+        "confirm": "✅ Confirm",
+        "cancel": "❌ Cancel"
     }
 }

@@ -2,6 +2,9 @@
   "scripts": {
     "start": "node src/index.js"
   },
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.90.1",
     "dotenv": "^17.2.3",

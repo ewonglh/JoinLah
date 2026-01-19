@@ -1,21 +1,23 @@
 const { Scenes, Markup } = require('telegraf');
-const db = require('./db/organiser');
+const db = require('../db/queries');
+const { getMessage } = require('../utils/messages');
 
 const organiserScene = new Scenes.WizardScene(
     'ORGANISER_SCENE',
     async (ctx) => {
-        if (!(await db.isAdmin(ctx.from.id))) {
-            await ctx.reply('⛔ Access denied. You are not an organiser.');
-            return ctx.scene.leave();
-        }
+        // In new schema, any user can be an organiser. We just ensure they exist.
+        await db.getOrCreateUser(ctx.from.id, {
+            name: ctx.from.first_name,
+            telegram_username: ctx.from.username
+        });
 
-        await ctx.reply('🛠️ *Organiser Dashboard*', {
+        await ctx.reply(getMessage('organiser.dashboard'), {
             parse_mode: 'Markdown',
             ...Markup.inlineKeyboard([
-                [Markup.button.callback('🆕 Create New Event', 'create')],
-                [Markup.button.callback('📢 Send Reminders', 'remind')],
-                [Markup.button.callback('📊 View Registrations', 'stats')],
-                [Markup.button.callback('🔙 Exit', 'exit')]
+                [Markup.button.callback(getMessage('buttons.createEvent'), 'create')],
+                [Markup.button.callback(getMessage('buttons.sendReminders'), 'remind')],
+                [Markup.button.callback(getMessage('buttons.viewRegistrations'), 'stats')],
+                [Markup.button.callback(getMessage('buttons.exit'), 'exit')]
             ])
         });
         return ctx.wizard.next();
@@ -26,50 +28,78 @@ const organiserScene = new Scenes.WizardScene(
         await ctx.answerCbQuery();
 
         if (action === 'create') {
-            await ctx.reply('Please enter the NAME of the new event:');
+            await ctx.reply(getMessage('organiser.createName'));
             return ctx.wizard.next();
         } else if (action === 'remind') {
-            const events = await db.getAllEvents();
-            const buttons = events.map(e => [Markup.button.callback(e.name, `remind_${e.id}`)]);
-            await ctx.reply('Select event to send reminders for:', Markup.inlineKeyboard(buttons));
+            const events = await db.getEventsByOrganiser(ctx.from.id);
+            if (!events.length) {
+                await ctx.reply('You have no events.');
+                return ctx.scene.leave();
+            }
+            const buttons = events.map(e => [Markup.button.callback(e.title, `remind_${e.id}`)]);
+            await ctx.reply(getMessage('organiser.selectReminder'), Markup.inlineKeyboard(buttons));
             return ctx.wizard.selectStep(4);
         } else if (action === 'stats') {
-            const events = await db.getAllEvents();
-            const buttons = events.map(e => [Markup.button.callback(e.name, `stats_${e.id}`)]);
-            await ctx.reply('Select event to view registrations:', Markup.inlineKeyboard(buttons));
+            const events = await db.getEventsByOrganiser(ctx.from.id);
+            if (!events.length) {
+                await ctx.reply('You have no events.');
+                return ctx.scene.leave();
+            }
+            const buttons = events.map(e => [Markup.button.callback(e.title, `stats_${e.id}`)]);
+            await ctx.reply(getMessage('organiser.selectStats'), Markup.inlineKeyboard(buttons));
             return ctx.wizard.selectStep(4);
         } else {
-            await ctx.reply('Exited dashboard.');
+            await ctx.reply(getMessage('organiser.exited'));
             return ctx.scene.leave();
         }
     },
-    // Step for "Create Event" - Get Name
+    // Step for "Create Event" - Get Name (Title)
     async (ctx) => {
-        if (!ctx.message || !ctx.message.text) return ctx.reply('Please enter a valid name.');
-        ctx.wizard.state.newName = ctx.message.text;
-        await ctx.reply('Great! Now enter the DATE of the event (e.g. 2026-03-20):');
+        if (!ctx.message || !ctx.message.text) return ctx.reply(getMessage('errors.invalidName'));
+        ctx.wizard.state.title = ctx.message.text;
+        await ctx.reply(getMessage('organiser.createDate')); // Expecting YYYY-MM-DD HH:mm or just text? Assuming text for now but schema needs Date.
         return ctx.wizard.next();
     },
     // Step for "Create Event" - Get Date
     async (ctx) => {
-        if (!ctx.message || !ctx.message.text) return ctx.reply('Please enter a valid date.');
-        ctx.wizard.state.newDate = ctx.message.text;
-        await ctx.reply('Last step: Enter the LOCATION:');
+        if (!ctx.message || !ctx.message.text) return ctx.reply(getMessage('errors.invalidDate'));
+        // Basic parsing attempt, assuming user enters ISO-like or we just try constructor
+        const dateInput = ctx.message.text;
+        // Ideally we'd have a stronger validation here
+        ctx.wizard.state.dateTime = dateInput;
+
+        await ctx.reply(getMessage('organiser.createLocation'));
         return ctx.wizard.next();
     },
     // Step for "Create Event" - Get Location & Finalize
     async (ctx) => {
-        if (!ctx.message || !ctx.message.text) return ctx.reply('Please enter a valid location.');
+        if (!ctx.message || !ctx.message.text) return ctx.reply(getMessage('errors.invalidLocation'));
         const state = ctx.wizard.state;
-        const newEvent = await db.createEvent({
-            name: state.newName,
-            date: state.newDate,
-            location: ctx.message.text
-        });
 
-        await ctx.replyWithMarkdown(`✅ *Event Created!*\n\n` +
-            `ID: \`${newEvent.id}\`\n` +
-            `Registration Link: \`https://t.me/${ctx.botInfo.username}?start=ev_${newEvent.id}\``);
+        try {
+            // Try to construct a valid date
+            const dateObj = new Date(state.dateTime);
+            if (isNaN(dateObj.getTime())) {
+                throw new Error('Invalid Date');
+            }
+
+            const newEvent = await db.createEvent({
+                title: state.title,
+                organiserTelegramId: ctx.from.id,
+                dateTime: dateObj.toISOString(),
+                location: ctx.message.text,
+                capacity: 100, // Default capacity
+                description: 'Created via Wizard'
+            });
+
+            await ctx.replyWithMarkdown(getMessage('organiser.created', {
+                id: newEvent.id,
+                link: `https://t.me/${ctx.botInfo.username}?start=ev_${newEvent.id}`
+            }));
+        } catch (e) {
+            await ctx.reply('Failed to create event. Please ensure date is valid (YYYY-MM-DD HH:mm) and try again.');
+            console.error(e);
+        }
         return ctx.scene.leave();
     },
     // Handler for Reminders/Stats (Step 4)
@@ -80,19 +110,19 @@ const organiserScene = new Scenes.WizardScene(
 
         if (data.startsWith('remind_')) {
             const eventId = data.replace('remind_', '');
-            const regs = await db.getRegistrationsForEvent(eventId);
-            await ctx.reply(`✅ Reminders sent to all ${regs.length} people registered!`);
+            const regs = await db.listRegistrationsForEvent(eventId);
+            await ctx.reply(getMessage('organiser.remindersSent', { count: regs.length }));
             return ctx.scene.leave();
         } else if (data.startsWith('stats_')) {
             const eventId = data.replace('stats_', '');
-            const regs = await db.getRegistrationsForEvent(eventId);
+            const regs = await db.listRegistrationsForEvent(eventId);
 
             if (regs.length === 0) {
-                await ctx.reply('No registrations yet.');
+                await ctx.reply(getMessage('organiser.noRegistrations'));
             } else {
-                let report = `📊 *Registrations for Event ${eventId}*\n\n`;
+                let report = getMessage('organiser.statsHeader', { eventId });
                 regs.forEach((r, i) => {
-                    report += `${i + 1}. ${r.user.firstName} (${r.role === 'organiser' ? 'Organiser' : 'Beneficiary'})\n`;
+                    report += `${i + 1}. ${r.participant_name} (via ${r.user_name})\n`;
                 });
                 await ctx.replyWithMarkdown(report);
             }
