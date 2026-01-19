@@ -8,6 +8,7 @@ const {
     handleTimePicker,
     getEventLocation,
     getEventDescription,
+    getEventPhoto,
     getEventCapacityAndFinalize
 } = require('./steps/createEvent');
 const {
@@ -28,11 +29,12 @@ const { handleRemindStats } = require('./steps/remindStats');
  * - Step 4: Create Event - Time Picker (handleTimePicker)
  * - Step 5: Create Event - Get Location (getEventLocation)
  * - Step 6: Create Event - Get Description (getEventDescription)
- * - Step 7: Create Event - Get Capacity & Finalize (getEventCapacityAndFinalize)
- * - Step 8: Preview Event Selection Handler (handlePreviewSelection)
- * - Step 9: Preview Actions (handlePreviewActions)
- * - Step 10: Handle Edit Input (handleEditInput)
- * - Step 11: Remind/Stats Handler (handleRemindStats)
+ * - Step 7: Create Event - Get Photo (getEventPhoto)
+ * - Step 8: Create Event - Get Capacity & Finalize (getEventCapacityAndFinalize)
+ * - Step 9: Preview Event Selection Handler (handlePreviewSelection)
+ * - Step 10: Preview Actions (handlePreviewActions)
+ * - Step 11: Handle Edit Input (handleEditInput)
+ * - Step 12: Remind/Stats Handler (handleRemindStats)
  */
 const organiserScene = new Scenes.WizardScene(
     'ORGANISER_SCENE',
@@ -287,7 +289,7 @@ const organiserScene = new Scenes.WizardScene(
             const eventId = data.replace('preview_', '');
             const event = await db.getEvent(eventId);
             ctx.wizard.state.previewEventId = eventId;
-            
+
             await showEventPreview(ctx, event);
             return ctx.wizard.next(); // Go to Step 5 (Preview Actions)
         }
@@ -319,16 +321,16 @@ const organiserScene = new Scenes.WizardScene(
             try {
                 const channelId = '@joinlahjoinlah';
                 const messageOpts = {
-                     parse_mode: 'Markdown',
-                     reply_markup: {
-                         inline_keyboard: [[Markup.button.url('🔗 Register Here', `https://t.me/${ctx.botInfo.username}?start=ev_${eventId}`)]]
-                     }
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [[Markup.button.url('🔗 Register Here', `https://t.me/${ctx.botInfo.username}?start=ev_${eventId}`)]]
+                    }
                 };
 
                 let caption = `📅 *${event.name}*\n\n` +
-                              `📍 *Location:* ${event.location}\n` +
-                              `🗓 *Date:* ${event.date}\n\n` +
-                              `${event.description || 'Join us for this amazing event!'}`;
+                    `📍 *Location:* ${event.location}\n` +
+                    `🗓 *Date:* ${event.date}\n\n` +
+                    `${event.description || 'Join us for this amazing event!'}`;
 
                 if (event.image_url) {
                     await ctx.telegram.sendPhoto(channelId, event.image_url, { caption, ...messageOpts });
@@ -364,11 +366,11 @@ const organiserScene = new Scenes.WizardScene(
                 'edit_loc': 'location'
             };
             ctx.wizard.state.editingField = fieldMap[action];
-            
+
             let prompt = '';
             if (action === 'edit_image') prompt = 'Please send the new image (as a Photo).';
             else prompt = `Please enter the new ${ctx.wizard.state.editingField}:`;
-            
+
             await ctx.reply(prompt);
             return ctx.wizard.next(); // Go to Step 6 (Input)
         }
@@ -398,9 +400,9 @@ const organiserScene = new Scenes.WizardScene(
                 // Re-reading: "This allows them to edit the description, image, etc."
                 // I'll stick to text URL if they send text, or file_id if they send photo.
                 // Note: file_id only works for sending via Telegram.
-                update.image_url = photo.file_id; 
+                update.image_url = photo.file_id;
             } else if (ctx.message.text) {
-                 update.image_url = ctx.message.text;
+                update.image_url = ctx.message.text;
             } else {
                 return ctx.reply('Please send a photo or image URL.');
             }
@@ -413,36 +415,36 @@ const organiserScene = new Scenes.WizardScene(
         }
 
         if (field === 'date') {
-             // In CREATE flow, date is stored as 'date' in JSON but 'date_time' in DB? 
-             // src/ops/organiser.js:66 `date: state.newDate`
-             // src/ops/db/organiser.js:createEvent `eventData`
-             // src/db/queries/events.js:createEvent `date_time: dateTime`
-             // Wait, `createEvent` in `ops/organiser.js` passes `{name, date, location}`.
-             // `ops/db/organiser.js` passes `[eventData]` to `.insert()`.
-             // `db/queries/events.js` expects different args.
-             // It seems `ops/db/organiser.js` directly inserts `eventData` into `events` table.
-             // So the columns must be `name`, `date`, `location`.
-             // But `db/queries/events.js` uses `title`, `date_time`, `location`.
-             // CONTRADICTION found in previous `read_file`.
-             // `ops/organiser.js` uses `db.createEvent`. `db` is `./db/organiser`.
-             // `ops/db/organiser.js` inserts directly.
-             // I must respect `ops/db/organiser.js` schema logic which implies columns `name`, `date` exist ??? 
-             // Or maybe `ops` code I read was assuming different schema than what `db/queries` thinks.
-             // Let's check `getAllEvents` in `ops/db/organiser.js`: `select('*')`.
-             // The `ops/organiser.js` line 33 uses `e.name`.
-             // So the column is likely `name`.
-             // I'll assume updates should match what was in Insert.
-             // `update.name`? No, I only offered to change Desc, Image, Date, Loc.
-             // `name` was not offered.
+            // In CREATE flow, date is stored as 'date' in JSON but 'date_time' in DB? 
+            // src/ops/organiser.js:66 `date: state.newDate`
+            // src/ops/db/organiser.js:createEvent `eventData`
+            // src/db/queries/events.js:createEvent `date_time: dateTime`
+            // Wait, `createEvent` in `ops/organiser.js` passes `{name, date, location}`.
+            // `ops/db/organiser.js` passes `[eventData]` to `.insert()`.
+            // `db/queries/events.js` expects different args.
+            // It seems `ops/db/organiser.js` directly inserts `eventData` into `events` table.
+            // So the columns must be `name`, `date`, `location`.
+            // But `db/queries/events.js` uses `title`, `date_time`, `location`.
+            // CONTRADICTION found in previous `read_file`.
+            // `ops/organiser.js` uses `db.createEvent`. `db` is `./db/organiser`.
+            // `ops/db/organiser.js` inserts directly.
+            // I must respect `ops/db/organiser.js` schema logic which implies columns `name`, `date` exist ??? 
+            // Or maybe `ops` code I read was assuming different schema than what `db/queries` thinks.
+            // Let's check `getAllEvents` in `ops/db/organiser.js`: `select('*')`.
+            // The `ops/organiser.js` line 33 uses `e.name`.
+            // So the column is likely `name`.
+            // I'll assume updates should match what was in Insert.
+            // `update.name`? No, I only offered to change Desc, Image, Date, Loc.
+            // `name` was not offered.
         }
 
         await db.updateEvent(eventId, update);
         await ctx.reply(`✅ ${field} updated!`);
-        
+
         // Show preview again
         const event = await db.getEvent(eventId);
         await showEventPreview(ctx, event);
-        
+
         return ctx.wizard.back(); // Go back to Step 5
     }
 =======
@@ -453,12 +455,12 @@ const organiserScene = new Scenes.WizardScene(
     handleTimePicker,                 // Step 4
     getEventLocation,                 // Step 5
     getEventDescription,              // Step 6
-    getEventCapacityAndFinalize,      // Step 7
-    handlePreviewSelection,           // Step 8
-    handlePreviewActions,             // Step 9
-    handleEditInput,                  // Step 10
-    handleRemindStats                 // Step 11
->>>>>>> 2816f42 (Fix event registration)
+    getEventPhoto,                    // Step 7
+    getEventCapacityAndFinalize,      // Step 8
+    handlePreviewSelection,           // Step 9
+    handlePreviewActions,             // Step 10
+    handleEditInput,                  // Step 11
+    handleRemindStats                 // Step 12
 );
 
 module.exports = organiserScene;
