@@ -1,107 +1,101 @@
-const { Scenes } = require('telegraf');
+const { Scenes, Markup } = require('telegraf');
 const { getEventsByOrganiser, getRegistrationsForExport } = require('./db/organiser');
 const ExcelJS = require('exceljs');
 
 const exportWizard = new Scenes.WizardScene(
     'EXPORT_WIZARD',
-    // Step 1: List user's events and ask for selection
+    // Step 1: List user's events via buttons
     async (ctx) => {
         try {
             const events = await getEventsByOrganiser(ctx.from.id);
 
             if (!events || events.length === 0) {
-                ctx.reply('You haven\'t created any events yet.');
-                return ctx.scene.leave();
+                await ctx.reply('You haven\'t created any events yet.');
+                return ctx.scene.enter('ORGANISER_SCENE');
             }
 
-            ctx.wizard.state.events = events;
-            let message = 'Select an event to export participants:\n\n';
-            events.forEach((event, index) => {
-                message += `${index + 1}. ${event.title} (${new Date(event.date_time).toLocaleDateString()})\n`;
-            });
+            const buttons = events.map(e => [Markup.button.callback(e.title, `exp_sel_${e.id}`)]);
+            buttons.push([Markup.button.callback('❌ Cancel', 'cancel_wizard')]);
 
-            ctx.reply(message);
+            await ctx.reply('📥 *Select an event to export signups:*', Markup.inlineKeyboard(buttons));
             return ctx.wizard.next();
         } catch (err) {
             console.error(err);
-            ctx.reply('Error fetching your events. Please try again later.');
-            return ctx.scene.leave();
+            await ctx.reply('Error fetching events.');
+            return ctx.scene.enter('ORGANISER_SCENE');
         }
     },
-    // Step 2: Fetch participants and export
+    // Step 2: Handle selection and generate excel
     async (ctx) => {
-        const selection = parseInt(ctx.message?.text);
-        const events = ctx.wizard.state.events;
+        if (!ctx.callbackQuery) return ctx.reply('Please use the buttons.');
+        const data = ctx.callbackQuery.data;
+        await ctx.answerCbQuery();
 
-        if (isNaN(selection) || selection < 1 || selection > events.length) {
-            ctx.reply('Invalid selection. Please enter a number from the list.');
-            return;
-        }
+        if (data === 'cancel_wizard') return cancel(ctx);
+        const eventId = data.replace('exp_sel_', '');
 
-        const targetEvent = events[selection - 1];
+        const events = await getEventsByOrganiser(ctx.from.id);
+        const target = events.find(e => e.id === eventId);
+
+        if (!target) return ctx.scene.enter('ORGANISER_SCENE');
 
         try {
-            ctx.reply('Generating export file...');
+            await ctx.reply('⏳ Generating export file...');
 
-            // Fetch all participants for the selected event
-            // Fetch all participants for the selected event
-            const registrations = await getRegistrationsForExport(targetEvent.id);
-
+            const registrations = await getRegistrationsForExport(target.id);
             if (!registrations || registrations.length === 0) {
-                ctx.reply('There are no signups for this event yet.');
-                return ctx.scene.leave();
+                await ctx.reply('No registrations found for this event.',
+                    Markup.inlineKeyboard([Markup.button.callback('🔙 Dashboard', 'home')])
+                );
+                return ctx.wizard.next();
             }
 
-            // Create workbook and worksheet
             const workbook = new ExcelJS.Workbook();
             const worksheet = workbook.addWorksheet('Participants');
 
-            // Define columns
             worksheet.columns = [
                 { header: 'Participant Name', key: 'name', width: 25 },
-                { header: 'Age', key: 'age', width: 10 },
                 { header: 'Status', key: 'status', width: 15 },
                 { header: 'Notes', key: 'notes', width: 30 },
-                { header: 'Registered At', key: 'registered_at', width: 20 },
-                { header: 'Signer Name', key: 'signer_name', width: 20 },
-                { header: 'Signer Username', key: 'signer_user', width: 20 },
-                { header: 'Signer Phone', key: 'signer_phone', width: 20 },
-                { header: 'Signer Email', key: 'signer_email', width: 25 }
+                { header: 'Signed By', key: 'signer', width: 20 },
+                { header: 'Phone', key: 'phone', width: 15 }
             ];
 
-            // Format data for ExcelJS
-            const rows = registrations.map(reg => ({
-                name: reg.participant_name,
-                age: reg.participant_age,
-                status: reg.status,
-                notes: reg.notes || '',
-                registered_at: new Date(reg.created_at).toLocaleString(),
-                signer_name: reg.users?.name || '',
-                signer_user: reg.users?.telegram_username ? `@${reg.users.telegram_username}` : '',
-                signer_phone: reg.users?.phone || '',
-                signer_email: reg.users?.email || ''
-            }));
+            registrations.forEach(reg => {
+                worksheet.addRow({
+                    name: reg.participant_name,
+                    status: reg.status,
+                    notes: reg.notes || '',
+                    signer: reg.users?.name || '',
+                    phone: reg.users?.phone || ''
+                });
+            });
 
-            // Add rows
-            worksheet.addRows(rows);
-
-            // Style header row (optional but nice)
-            worksheet.getRow(1).font = { bold: true };
-
-            // Generate buffer
             const buffer = await workbook.xlsx.writeBuffer();
+            const filename = `${target.title.replace(/[^a-z0-9]/gi, '_')}.xlsx`;
 
-            // Send to Telegram
-            const filename = `${targetEvent.title.replace(/[^a-z0-9]/gi, '_')}_signups.xlsx`;
-            await ctx.replyWithDocument({ source: buffer, filename: filename });
+            await ctx.replyWithDocument({ source: buffer, filename });
+            await ctx.reply('✅ Export complete!',
+                Markup.inlineKeyboard([Markup.button.callback('🔙 Back to Dashboard', 'home')])
+            );
 
         } catch (err) {
             console.error(err);
-            ctx.reply(`Error exporting data: ${err.message}`);
+            await ctx.reply('Error generating export.');
         }
 
-        return ctx.scene.leave();
+        return ctx.wizard.next();
+    },
+    async (ctx) => {
+        return ctx.scene.enter('ORGANISER_SCENE');
     }
 );
+
+async function cancel(ctx) {
+    return ctx.scene.enter('ORGANISER_SCENE');
+}
+
+exportWizard.action('cancel_wizard', cancel);
+exportWizard.action('home', (ctx) => ctx.scene.enter('ORGANISER_SCENE'));
 
 module.exports = exportWizard;

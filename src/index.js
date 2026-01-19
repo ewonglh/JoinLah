@@ -4,6 +4,9 @@ const newEventWizard = require('./ops/newEvent');
 const editEventWizard = require('./ops/editEvent');
 const eventSummaryWizard = require('./ops/eventSummary');
 const exportWizard = require('./ops/export');
+const organiserScene = require('./ops/organiser');
+const signupScene = require('./ops/signup');
+const { profileScene, setupProfileScene } = require('./ops/profile');
 const db = require('./db/queries');
 const messages = require('./messages.json');
 
@@ -30,7 +33,16 @@ bot.catch((err, ctx) => {
     console.error(`Error for ${ctx.updateType}`, err);
 });
 
-const stage = new Scenes.Stage([newEventWizard, editEventWizard, eventSummaryWizard, exportWizard]);
+const stage = new Scenes.Stage([
+    newEventWizard,
+    editEventWizard,
+    eventSummaryWizard,
+    exportWizard,
+    organiserScene,
+    signupScene,
+    profileScene,
+    setupProfileScene
+]);
 
 // Middleware
 bot.use(session());
@@ -111,8 +123,10 @@ bot.command('newevent', (ctx) => ctx.scene.enter('NEW_EVENT_WIZARD'));
 bot.command('editevent', (ctx) => ctx.scene.enter('EDIT_EVENT_WIZARD'));
 bot.command('eventsummary', (ctx) => ctx.scene.enter('EVENT_SUMMARY_WIZARD'));
 bot.command('export', (ctx) => ctx.scene.enter('EXPORT_WIZARD'));
+bot.command('organiser', (ctx) => ctx.scene.enter('ORGANISER_SCENE'));
+bot.command('profile', (ctx) => ctx.scene.enter('PROFILE_SCENE'));
 
-bot.help((ctx) => ctx.reply('Available commands:\n/newevent - Create a new event\n/editevent - Edit an existing event\n/eventsummary - View signup counts\n/export - Download participant list (Excel)'));
+bot.help((ctx) => ctx.reply('Available commands:\n/organiser - Organiser Dashboard\n/profile - View/Edit Profile\n/newevent - Create a new event\n/editevent - Edit an existing event\n/eventsummary - View signup counts\n/export - Download participant list (Excel)'));
 
 // Staff command
 bot.command('roster', async (ctx) => {
