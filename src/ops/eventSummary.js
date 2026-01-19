@@ -1,5 +1,5 @@
 const { Scenes } = require('telegraf');
-const { getEventsByOrganiser, getEventRegistrationCount } = require('./db/organiser');
+const { getEventsByOrganiser, getEventRegistrationCount } = require('../db/queries');
 
 const eventSummaryWizard = new Scenes.WizardScene(
     'EVENT_SUMMARY_WIZARD',
@@ -55,7 +55,7 @@ const eventSummaryWizard = new Scenes.WizardScene(
                 summary += `\n📝 *Description:* ${targetEvent.description}\n`;
             }
 
-            await ctx.replyWithMarkdown(summary);
+            await ctx.replyWithMarkdownV2(summary);
         } catch (err) {
             console.error(err);
             ctx.reply('Error fetching registration data.');
