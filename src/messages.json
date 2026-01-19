@@ -47,7 +47,7 @@
         "askRequirements": "Please tell us about any specific assistance or items you need:",
         "summary": "📝 *Beneficiary Registration Summary*\n\nEvent: {eventName}\nBeneficiary: {beneficiaryName}\n{onBehalf}Notes: {requirements}\n\nConfirm this registration?",
         "onBehalfLabel": "*On behalf of beneficiary*\n",
-        "success": "🎉 Success! Your registration is complete. We will reach out soon.",
+        "success": "🎉 *Registration Confirmed!*\n\n✅ You are now registered for:\n📌 *{eventName}*\n📅 *Date:* {eventDate}\n📍 *Location:* {eventLocation}\n\nWe will reach out soon with more details. See you there!",
         "cancelled": "Registration cancelled."
     },
     "buttons": {

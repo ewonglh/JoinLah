@@ -1,6 +1,7 @@
 const { Scenes, Markup } = require('telegraf');
 const db = require('../db/queries');
 const { getMessage } = require('../utils/messages');
+const { formatEventDate } = require('./helpers/formatDate');
 
 // Helper for event card
 function getEventCard(event) {
@@ -13,12 +14,20 @@ function getEventCard(event) {
 
 const signupScene = new Scenes.WizardScene(
     'SIGNUP_SCENE',
-    // Step 1: Display Event & Ask Role (Beneficiary vs Organiser - Legacy intent, now essentially "Myself" vs "Organiser/Admin Role")
-    // Actually, following previous logic: Organiser -> Switch role. Beneficiary -> Signup.
-    // In new schema, we'll interpret "Organiser" as just setting "is_caregiver" maybe? Or just ignore?
-    // Let's stick to the flow: If Organiser, go to Organiser scene.
+    // Step 1: Display Event
     async (ctx) => {
-        const eventId = ctx.wizard.state.eventId;
+        // eventId can come from either ctx.scene.state (from /start deep link)
+        // or ctx.wizard.state (if set directly)
+        const eventId = ctx.scene.state?.eventId || ctx.wizard.state?.eventId;
+
+        if (!eventId) {
+            await ctx.reply('❌ No event specified. Please use a valid registration link.');
+            return ctx.scene.leave();
+        }
+
+        // Store in wizard state for subsequent steps
+        ctx.wizard.state.eventId = eventId;
+
         const event = await db.getEvent(eventId);
 
         if (!event) {
@@ -35,36 +44,19 @@ const signupScene = new Scenes.WizardScene(
         });
         ctx.wizard.state.userProfile = user;
 
-        await ctx.replyWithMarkdownV2(getEventCard(event));
-        await ctx.reply(getMessage('signup.askRole'),
-            Markup.inlineKeyboard([
-                [Markup.button.callback(getMessage('buttons.beneficiary'), 'beneficiary'), Markup.button.callback(getMessage('buttons.organiser'), 'organiser')]
-            ])
-        );
+        await ctx.replyWithMarkdown(getEventCard(event));
+
+        // Directly proceed to beneficiary registration (no role selection)
+        await ctx.reply(getMessage('signup.askBeneficiaryName'));
         return ctx.wizard.next();
     },
-    // Step 2: Handle Role Input & Scene Branching
-    async (ctx) => {
-        if (!ctx.callbackQuery) return ctx.reply(getMessage('errors.unknownInput'));
-        const role = ctx.callbackQuery.data;
-        ctx.wizard.state.regRole = role;
-        await ctx.answerCbQuery();
 
-        if (role === 'organiser') {
-            // Update user to indicate they are acting as organiser (if we need to track this, maybe is_caregiver? or just ignore since no role col)
-            // For now, just switch scenes as requested by logic
-            await ctx.reply(getMessage('signup.organiserSwitch'));
-            return ctx.scene.enter('ORGANISER_SCENE');
-        } else {
-            await ctx.reply(getMessage('signup.askBeneficiaryName'));
-            return ctx.wizard.next();
-        }
-    },
-    // Step 3: Name Comparison
+    // Step 2: Name Input
     async (ctx) => {
         if (!ctx.message || !ctx.message.text) return ctx.reply(getMessage('errors.invalidName'));
         const providedName = ctx.message.text.trim();
         ctx.wizard.state.beneficiaryName = providedName;
+
 
         const profile = ctx.wizard.state.userProfile;
         const profileName = (profile.name || '').trim();
@@ -84,7 +76,7 @@ const signupScene = new Scenes.WizardScene(
 
         ctx.wizard.state.onBehalf = false;
         await ctx.reply(getMessage('signup.askRequirements'));
-        return ctx.wizard.selectStep(5); // Jump to Requirements
+        return ctx.wizard.selectStep(4); // Jump to Requirements
     },
     // Step 4: Handle On-Behalf Confirmation
     async (ctx) => {
@@ -110,7 +102,7 @@ const signupScene = new Scenes.WizardScene(
             requirements: state.requirements
         });
 
-        await ctx.replyWithMarkdown(summary, Markup.inlineKeyboard([
+        await ctx.replyWithMarkdownV2(summary, Markup.inlineKeyboard([
             [Markup.button.callback(getMessage('buttons.confirm'), 'confirm'), Markup.button.callback(getMessage('buttons.cancel'), 'cancel')]
         ]));
         return ctx.wizard.next();
@@ -138,7 +130,11 @@ const signupScene = new Scenes.WizardScene(
             // For now, I'll assume I update the query in the next step or just pass it and hope (it won't work if not defined).
             // Let's rely on the fact that I can update createRegistration to support more fields.
 
-            await ctx.reply(getMessage('signup.success'));
+            await ctx.replyWithMarkdown(getMessage('signup.success', {
+                eventName: state.event.title,
+                eventDate: new Date(state.event.date_time).toLocaleString(),
+                eventLocation: state.event.location
+            }));
         } else {
             await ctx.reply(getMessage('signup.cancelled'));
         }

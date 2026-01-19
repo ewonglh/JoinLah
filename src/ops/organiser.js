@@ -1,11 +1,42 @@
-const { Scenes, Markup } = require('telegraf');
-const db = require('../db/queries');
-const { getMessage } = require('../utils/messages');
-const { generateCalendar, parseCalendarCallback } = require('../utils/calendar');
-const { generateTimePicker, parseTimeCallback } = require('../utils/timePicker');
+const { Scenes } = require('telegraf');
 
+// Import step handlers from separate modules
+const { showDashboard, handleDashboardAction } = require('./steps/dashboard');
+const {
+    getEventName,
+    handleCalendarNavigation,
+    handleTimePicker,
+    getEventLocation,
+    getEventDescription,
+    getEventCapacityAndFinalize
+} = require('./steps/createEvent');
+const {
+    handlePreviewSelection,
+    handlePreviewActions,
+    handleEditInput
+} = require('./steps/previewEvent');
+const { handleRemindStats } = require('./steps/remindStats');
+
+/**
+ * Organiser Scene - Main wizard for event organisers
+ * 
+ * Step Map:
+ * - Step 0: Dashboard (showDashboard)
+ * - Step 1: Dashboard Action Handler (handleDashboardAction)
+ * - Step 2: Create Event - Get Name (getEventName)
+ * - Step 3: Create Event - Calendar Navigation (handleCalendarNavigation)
+ * - Step 4: Create Event - Time Picker (handleTimePicker)
+ * - Step 5: Create Event - Get Location (getEventLocation)
+ * - Step 6: Create Event - Get Description (getEventDescription)
+ * - Step 7: Create Event - Get Capacity & Finalize (getEventCapacityAndFinalize)
+ * - Step 8: Preview Event Selection Handler (handlePreviewSelection)
+ * - Step 9: Preview Actions (handlePreviewActions)
+ * - Step 10: Handle Edit Input (handleEditInput)
+ * - Step 11: Remind/Stats Handler (handleRemindStats)
+ */
 const organiserScene = new Scenes.WizardScene(
     'ORGANISER_SCENE',
+<<<<<<< HEAD
     // Step 0: Dashboard
     async (ctx) => {
         // In new schema, any user can be an organiser. We just ensure they exist.
@@ -414,26 +445,20 @@ const organiserScene = new Scenes.WizardScene(
         
         return ctx.wizard.back(); // Go back to Step 5
     }
+=======
+    showDashboard,                    // Step 0
+    handleDashboardAction,            // Step 1
+    getEventName,                     // Step 2
+    handleCalendarNavigation,         // Step 3
+    handleTimePicker,                 // Step 4
+    getEventLocation,                 // Step 5
+    getEventDescription,              // Step 6
+    getEventCapacityAndFinalize,      // Step 7
+    handlePreviewSelection,           // Step 8
+    handlePreviewActions,             // Step 9
+    handleEditInput,                  // Step 10
+    handleRemindStats                 // Step 11
+>>>>>>> 2816f42 (Fix event registration)
 );
-
-// Helper function
-async function showEventPreview(ctx, event) {
-    let caption = `📅 *${event.name}*\n\n` +
-                  `📍 *Location:* ${event.location}\n` +
-                  `🗓 *Date:* ${event.date}\n\n` +
-                  `${event.description || '_No description yet_'}`;
-
-    const buttons = Markup.inlineKeyboard([
-        [Markup.button.callback('✏️ Edit', 'edit_event'), Markup.button.callback('🚀 Send to Channel', 'send_channel')],
-        [Markup.button.callback('🔙 Back to Menu', 'back_menu')]
-    ]);
-
-    if (event.image_url) {
-        // If it looks like a URL or file_id
-        await ctx.replyWithPhoto(event.image_url, { caption, parse_mode: 'Markdown', ...buttons });
-    } else {
-        await ctx.reply(caption, { parse_mode: 'Markdown', ...buttons });
-    }
-}
 
 module.exports = organiserScene;
