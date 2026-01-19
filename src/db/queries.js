@@ -169,7 +169,7 @@ async function getRegistrationsForExport(eventId) {
       status,
       notes,
       created_at,
-      users (
+      users!user_telegram_id (
         name,
         telegram_username,
         phone,
