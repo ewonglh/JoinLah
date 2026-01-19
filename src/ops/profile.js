@@ -1,34 +1,35 @@
 const { Scenes, Markup } = require('telegraf');
-const db = require('./db/profile');
+const db = require('../db/queries');
+const { getMessage } = require('../utils/messages');
 
 const setupProfileScene = new Scenes.WizardScene(
     'SETUP_PROFILE_SCENE',
     async (ctx) => {
-        await ctx.reply('Welcome! Before we get started, please help us complete your profile. What is your full name?');
+        await ctx.reply(getMessage('profile.setupWelcome'));
         return ctx.wizard.next();
     },
     async (ctx) => {
-        if (!ctx.message || !ctx.message.text) return ctx.reply('Please enter a valid name.');
-        ctx.wizard.state.fullName = ctx.message.text;
-        await ctx.reply('Thank you! Please enter your contact number:');
+        if (!ctx.message || !ctx.message.text) return ctx.reply(getMessage('errors.invalidName'));
+        ctx.wizard.state.name = ctx.message.text;
+        await ctx.reply(getMessage('profile.askPhone'));
         return ctx.wizard.next();
     },
     async (ctx) => {
-        if (!ctx.message || !ctx.message.text) return ctx.reply('Please enter a valid number.');
-        const fullName = ctx.wizard.state.fullName;
+        if (!ctx.message || !ctx.message.text) return ctx.reply(getMessage('errors.invalidNumber'));
+        const name = ctx.wizard.state.name;
 
-        await db.updateUserProfile(ctx.from.id, {
-            name: fullName,
+        await db.updateUser(ctx.from.id, {
+            name: name,
             phone: ctx.message.text
         });
 
-        await ctx.reply('✅ Profile setup complete!');
+        await ctx.reply(getMessage('profile.setupComplete'));
 
         // Handle redirection if there was a pending event
         if (ctx.session.pendingEventId) {
             const eventId = ctx.session.pendingEventId;
             delete ctx.session.pendingEventId;
-            await ctx.reply('Now proceeding to event registration...');
+            await ctx.reply(getMessage('profile.proceedToEvent'));
             return ctx.scene.enter('SIGNUP_SCENE', { eventId });
         }
 
@@ -40,18 +41,19 @@ const profileScene = new Scenes.WizardScene(
     'PROFILE_SCENE',
     async (ctx) => {
         const user = await db.getOrCreateUser(ctx.from.id, {
-            name: `${ctx.from.first_name || ''} ${ctx.from.last_name || ''}`.trim(),
+            name: ctx.from.first_name,
             telegram_username: ctx.from.username
         });
 
-        let profileText = `👤 *Your Profile*\n\n` +
-            `Name: ${user.name || 'Not set'}\n` +
-            `Phone: ${user.phone || 'Not set'}\n` +
-            `Role: ${user.is_caregiver ? 'Caregiver' : 'User'}\n\n` +
-            `Would you like to update your details?`;
+        let profileText = getMessage('profile.view', {
+            firstName: user.name, // Mapping name to firstName param for message template compatibility
+            lastName: '',
+            phone: user.phone || 'Not set',
+            role: user.is_caregiver ? 'Caregiver' : 'User'
+        });
 
-        await ctx.replyWithMarkdown(profileText, Markup.inlineKeyboard([
-            [Markup.button.callback('📝 Edit Profile', 'edit'), Markup.button.callback('🔙 Back', 'back')]
+        await ctx.replyWithMarkdownV2(profileText, Markup.inlineKeyboard([
+            [Markup.button.callback(getMessage('buttons.editProfile'), 'edit'), Markup.button.callback(getMessage('buttons.back'), 'back')]
         ]));
         return ctx.wizard.next();
     },
@@ -61,17 +63,17 @@ const profileScene = new Scenes.WizardScene(
         await ctx.answerCbQuery();
 
         if (action === 'edit') {
-            await ctx.reply('Please enter your updated bio or any additional info.');
+            await ctx.reply('Please enter your new name:'); // Simplified edit flow for now
             return ctx.wizard.next();
         } else {
-            await ctx.reply('Menu closed.');
+            await ctx.reply(getMessage('profile.menuClosed'));
             return ctx.scene.leave();
         }
     },
     async (ctx) => {
-        if (!ctx.message || !ctx.message.text) return ctx.reply('Please enter valid text.');
-        await db.updateUserProfile(ctx.from.id, { bio: ctx.message.text });
-        await ctx.reply('✅ Profile updated!');
+        if (!ctx.message || !ctx.message.text) return ctx.reply(getMessage('errors.invalidText'));
+        await db.updateUser(ctx.from.id, { name: ctx.message.text });
+        await ctx.reply(getMessage('profile.updated'));
         return ctx.scene.leave();
     }
 );

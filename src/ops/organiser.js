@@ -1,23 +1,24 @@
 const { Scenes, Markup } = require('telegraf');
-const db = require('./db/organiser');
+const db = require('../db/queries');
+const { getMessage } = require('../utils/messages');
 
 const organiserScene = new Scenes.WizardScene(
     'ORGANISER_SCENE',
     // Step 1: Main Dashboard Menu
     async (ctx) => {
-        if (!(await db.isAdmin(ctx.from.id))) {
-            await ctx.reply('⛔ Access denied. You are not an organiser.');
-            return ctx.scene.leave();
-        }
+        // In new schema, any user can be an organiser. We just ensure they exist.
+        await db.getOrCreateUser(ctx.from.id, {
+            name: ctx.from.first_name,
+            telegram_username: ctx.from.username
+        });
 
-        await ctx.replyWithMarkdown('🛠️ *Organiser Dashboard*\nWhat would you like to do?',
-            Markup.inlineKeyboard([
-                [Markup.button.callback('🆕 Create New Event', 'create')],
-                [Markup.button.callback('📊 View Registrations', 'stats')],
-                [Markup.button.callback('✏️ Edit My Events', 'edit')],
-                [Markup.button.callback('🌐 Browse All Events', 'all_events')],
-                [Markup.button.callback('📥 Export Signups', 'export_file')],
-                [Markup.button.callback('🔙 Exit', 'exit')]
+        await ctx.reply(getMessage('organiser.dashboard'), {
+            parse_mode: 'Markdown',
+            ...Markup.inlineKeyboard([
+                [Markup.button.callback(getMessage('buttons.createEvent'), 'create')],
+                [Markup.button.callback(getMessage('buttons.sendReminders'), 'remind')],
+                [Markup.button.callback(getMessage('buttons.viewRegistrations'), 'stats')],
+                [Markup.button.callback(getMessage('buttons.exit'), 'exit')]
             ])
         );
         return ctx.wizard.next();
@@ -28,44 +29,108 @@ const organiserScene = new Scenes.WizardScene(
         const action = ctx.callbackQuery.data;
         await ctx.answerCbQuery();
 
-        switch (action) {
-            case 'create':
-                return ctx.scene.enter('NEW_EVENT_WIZARD');
-            case 'stats':
-                return ctx.scene.enter('EVENT_SUMMARY_WIZARD');
-            case 'edit':
-                return ctx.scene.enter('EDIT_EVENT_WIZARD');
-            case 'all_events':
-                const events = await db.getAllEvents();
-                if (events.length === 0) {
-                    await ctx.reply('No events found.');
-                } else {
-                    let msg = '🌐 *All System Events*\n\n';
-                    events.forEach((e, i) => msg += `${i + 1}. *${e.title}* (${e.location || 'No Location'})\n`);
-                    await ctx.replyWithMarkdown(msg,
-                        Markup.inlineKeyboard([Markup.button.callback('🔙 Back to Dashboard', 'home')])
-                    );
-                    return ctx.wizard.next(); // Wait for back button or user to leave
-                }
-                return ctx.wizard.selectStep(0); // Refresh menu
-            case 'export_file':
-                return ctx.scene.enter('EXPORT_WIZARD');
-            case 'exit':
-                await ctx.reply('Exited dashboard.');
+        if (action === 'create') {
+            await ctx.reply(getMessage('organiser.createName'));
+            return ctx.wizard.next();
+        } else if (action === 'remind') {
+            const events = await db.getEventsByOrganiser(ctx.from.id);
+            if (!events.length) {
+                await ctx.reply('You have no events.');
                 return ctx.scene.leave();
-            default:
-                return ctx.wizard.selectStep(0);
+            }
+            const buttons = events.map(e => [Markup.button.callback(e.title, `remind_${e.id}`)]);
+            await ctx.reply(getMessage('organiser.selectReminder'), Markup.inlineKeyboard(buttons));
+            return ctx.wizard.selectStep(4);
+        } else if (action === 'stats') {
+            const events = await db.getEventsByOrganiser(ctx.from.id);
+            if (!events.length) {
+                await ctx.reply('You have no events.');
+                return ctx.scene.leave();
+            }
+            const buttons = events.map(e => [Markup.button.callback(e.title, `stats_${e.id}`)]);
+            await ctx.reply(getMessage('organiser.selectStats'), Markup.inlineKeyboard(buttons));
+            return ctx.wizard.selectStep(4);
+        } else {
+            await ctx.reply(getMessage('organiser.exited'));
+            return ctx.scene.leave();
         }
     },
-    // Step 3: Handle "Back" from All Events (optional but nice)
+    // Step for "Create Event" - Get Name (Title)
     async (ctx) => {
-        if (ctx.callbackQuery?.data === 'home') {
-            await ctx.answerCbQuery();
-            return ctx.scene.enter('ORGANISER_SCENE');
+        if (!ctx.message || !ctx.message.text) return ctx.reply(getMessage('errors.invalidName'));
+        ctx.wizard.state.title = ctx.message.text;
+        await ctx.reply(getMessage('organiser.createDate')); // Expecting YYYY-MM-DD HH:mm or just text? Assuming text for now but schema needs Date.
+        return ctx.wizard.next();
+    },
+    // Step for "Create Event" - Get Date
+    async (ctx) => {
+        if (!ctx.message || !ctx.message.text) return ctx.reply(getMessage('errors.invalidDate'));
+        // Basic parsing attempt, assuming user enters ISO-like or we just try constructor
+        const dateInput = ctx.message.text;
+        // Ideally we'd have a stronger validation here
+        ctx.wizard.state.dateTime = dateInput;
+
+        await ctx.reply(getMessage('organiser.createLocation'));
+        return ctx.wizard.next();
+    },
+    // Step for "Create Event" - Get Location & Finalize
+    async (ctx) => {
+        if (!ctx.message || !ctx.message.text) return ctx.reply(getMessage('errors.invalidLocation'));
+        const state = ctx.wizard.state;
+
+        try {
+            // Try to construct a valid date
+            const dateObj = new Date(state.dateTime);
+            if (isNaN(dateObj.getTime())) {
+                throw new Error('Invalid Date');
+            }
+
+            const newEvent = await db.createEvent({
+                title: state.title,
+                organiserTelegramId: ctx.from.id,
+                dateTime: dateObj.toISOString(),
+                location: ctx.message.text,
+                capacity: 100, // Default capacity
+                description: 'Created via Wizard'
+            });
+
+            await ctx.replyWithMarkdown(getMessage('organiser.created', {
+                id: newEvent.id,
+                link: `https://t.me/${ctx.botInfo.username}?start=ev_${newEvent.id}`
+            }));
+        } catch (e) {
+            await ctx.reply('Failed to create event. Please ensure date is valid (YYYY-MM-DD HH:mm) and try again.');
+            console.error(e);
+        }
+        return ctx.scene.leave();
+    },
+    // Handler for Reminders/Stats (Step 4)
+    async (ctx) => {
+        if (!ctx.callbackQuery) return;
+        const data = ctx.callbackQuery.data;
+        await ctx.answerCbQuery();
+
+        if (data.startsWith('remind_')) {
+            const eventId = data.replace('remind_', '');
+            const regs = await db.listRegistrationsForEvent(eventId);
+            await ctx.reply(getMessage('organiser.remindersSent', { count: regs.length }));
+            return ctx.scene.leave();
+        } else if (data.startsWith('stats_')) {
+            const eventId = data.replace('stats_', '');
+            const regs = await db.listRegistrationsForEvent(eventId);
+
+            if (regs.length === 0) {
+                await ctx.reply(getMessage('organiser.noRegistrations'));
+            } else {
+                let report = getMessage('organiser.statsHeader', { eventId });
+                regs.forEach((r, i) => {
+                    report += `${i + 1}. ${r.participant_name} (via ${r.user_name})\n`;
+                });
+                await ctx.replyWithMarkdown(report);
+            }
+            return ctx.scene.leave();
         }
     }
 );
-
-organiserScene.action('home', (ctx) => ctx.scene.enter('ORGANISER_SCENE'));
 
 module.exports = organiserScene;

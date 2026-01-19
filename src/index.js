@@ -1,36 +1,27 @@
 require('dotenv').config();
-const { Telegraf, Scenes, session } = require('telegraf');
-const newEventWizard = require('./ops/newEvent');
-const editEventWizard = require('./ops/editEvent');
-const eventSummaryWizard = require('./ops/eventSummary');
-const exportWizard = require('./ops/export');
+const http = require('http');
+const { Telegraf, Scenes, session, Markup } = require('telegraf');
+const { getMessage } = require('./utils/messages');
 const db = require('./db/queries');
-const messages = require('./messages.json');
+
+// Import Scenes
+const organiserScene = require('./ops/organiser');
+const { profileScene, setupProfileScene } = require('./ops/profile');
+const signupScene = require('./ops/signup');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
-
-// Helper to get message strings with variable substitution
-const getMessage = (path, params = {}) => {
-    const keys = path.split('.');
-    let msg = messages;
-    for (const key of keys) {
-        msg = msg[key];
-        if (!msg) return path; // Return key if not found
-    }
-
-    if (typeof msg !== 'string') return path;
-
-    return msg.replace(/{(\w+)}/g, (match, key) => {
-        return typeof params[key] !== 'undefined' ? params[key] : match;
-    });
-};
 
 // Test DB connection on startup
 bot.catch((err, ctx) => {
     console.error(`Error for ${ctx.updateType}`, err);
 });
 
-const stage = new Scenes.Stage([newEventWizard, editEventWizard, eventSummaryWizard, exportWizard]);
+const stage = new Scenes.Stage([
+    organiserScene,
+    profileScene,
+    setupProfileScene,
+    signupScene
+]);
 
 // Middleware
 bot.use(session());
@@ -48,231 +39,73 @@ bot.start(async (ctx) => {
     const userId = ctx.from.id;
     const args = ctx.message.text.split(' ');
 
-    // Parse deep link: /start ev_<eventId>
-    if (args[1] && args[1].startsWith('ev_')) {
-        const eventId = args[1].slice(3); // Extract event ID
-        const event = await db.getEvent(eventId);
-
-        if (!event) {
-            return ctx.reply(getMessage('errors.eventNotFound'));
-        }
-
-        // Store pending event and start signup flow
-        await db.setBotState(userId, 'ASK_SELF_OR_OTHER', eventId);
-
-        return ctx.reply(
-            getMessage('welcome.askSelfOrOther', {
-                title: event.title,
-                location: event.location,
-                dateTime: event.date_time // You might want to format this date
-            }),
-            {
-                parse_mode: 'Markdown',
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: getMessage('buttons.myself'), callback_data: 'self' }],
-                        [{ text: getMessage('buttons.someoneElse'), callback_data: 'caregiver' }]
-                    ]
-                }
-            }
-        );
-    }
-
-    // Regular /start
-    await db.getOrCreateUser(userId, {
-        name: ctx.from.first_name,
+    // Ensure user exists in our DB
+    const user = await db.getOrCreateUser(userId, {
+        name: [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(' '),
         telegram_username: ctx.from.username
     });
-    ctx.reply(getMessage('welcome.regular'));
-    const userId = ctx.from.id;
-    const args = ctx.message.text.split(' ');
 
     // Parse deep link: /start ev_<eventId>
     if (args[1] && args[1].startsWith('ev_')) {
         const eventId = args[1].slice(3); // Extract event ID
-        const event = await db.getEvent(eventId);
 
-        if (!event) {
-            return ctx.reply(getMessage('errors.eventNotFound'));
+        // If profile is incomplete, force setup first
+        if (!user.phone) {
+            ctx.session.pendingEventId = eventId;
+            return ctx.scene.enter('SETUP_PROFILE_SCENE');
         }
 
-        // Store pending event and start signup flow
-        await db.setBotState(userId, 'ASK_SELF_OR_OTHER', eventId);
-
-        return ctx.reply(
-            getMessage('welcome.askSelfOrOther', {
-                title: event.title,
-                location: event.location,
-                dateTime: event.date_time // You might want to format this date
-            }),
-            {
-                parse_mode: 'Markdown',
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: getMessage('buttons.myself'), callback_data: 'self' }],
-                        [{ text: getMessage('buttons.someoneElse'), callback_data: 'caregiver' }]
-                    ]
-                }
-            }
-        );
+        // Otherwise go straight to signup
+        return ctx.scene.enter('SIGNUP_SCENE', { eventId });
     }
 
     // Regular /start
-    await db.getOrCreateUser(userId, {
-        name: ctx.from.first_name,
-        telegram_username: ctx.from.username
-    });
-    ctx.reply(getMessage('welcome.regular'));
-});
-
-// Handle button clicks
-bot.action(['self', 'caregiver'], async (ctx) => {
-    const userId = ctx.from.id;
-    const state = await db.getBotState(userId);
-
-    if (!state || state.state !== 'ASK_SELF_OR_OTHER') {
-        return ctx.answerCbQuery(getMessage('errors.startOver'));
+    if (!user.phone) {
+        return ctx.scene.enter('SETUP_PROFILE_SCENE');
     }
 
-    const isCaregiver = ctx.callbackQuery.data === 'caregiver';
-    await db.setBotState(userId, 'ASK_NAME', state.pending_event_id, {
-        is_caregiver: isCaregiver
-    });
-
-    ctx.editMessageText(
-        getMessage('prompts.enterName', { who: isCaregiver ? 'participant' : 'your' }),
-        { reply_markup: { inline_keyboard: [[{ text: getMessage('buttons.cancel'), callback_data: 'cancel' }]] } }
-    );
-    const userId = ctx.from.id;
-    const state = await db.getBotState(userId);
-
-    if (!state || state.state !== 'ASK_SELF_OR_OTHER') {
-        return ctx.answerCbQuery(getMessage('errors.startOver'));
-    }
-
-    const isCaregiver = ctx.callbackQuery.data === 'caregiver';
-    await db.setBotState(userId, 'ASK_NAME', state.pending_event_id, {
-        is_caregiver: isCaregiver
-    });
-
-    ctx.editMessageText(
-        getMessage('prompts.enterName', { who: isCaregiver ? 'participant' : 'your' }),
-        { reply_markup: { inline_keyboard: [[{ text: getMessage('buttons.cancel'), callback_data: 'cancel' }]] } }
+    // Dashboard selection for registered users
+    ctx.reply(
+        'Welcome back! Please select a dashboard:',
+        Markup.inlineKeyboard([
+            [Markup.button.callback('👤 Participant Dashboard', 'dashboard_participant')],
+            [Markup.button.callback('📅 Organiser Dashboard', 'dashboard_organiser')]
+        ])
     );
 });
 
+// Dashboard actions
+bot.action('dashboard_participant', (ctx) => {
+    ctx.answerCbQuery();
+    ctx.scene.enter('PROFILE_SCENE');
+});
+
+bot.action('dashboard_organiser', (ctx) => {
+    ctx.answerCbQuery();
+    ctx.scene.enter('ORGANISER_SCENE');
+});
 
 // Commands
-bot.command('newevent', (ctx) => ctx.scene.enter('NEW_EVENT_WIZARD'));
-bot.command('editevent', (ctx) => ctx.scene.enter('EDIT_EVENT_WIZARD'));
-bot.command('eventsummary', (ctx) => ctx.scene.enter('EVENT_SUMMARY_WIZARD'));
-bot.command('export', (ctx) => ctx.scene.enter('EXPORT_WIZARD'));
+bot.command('organiser', (ctx) => ctx.scene.enter('ORGANISER_SCENE'));
+bot.command('profile', (ctx) => ctx.scene.enter('PROFILE_SCENE'));
 
-bot.help((ctx) => ctx.reply('Available commands:\n/newevent - Create a new event\n/editevent - Edit an existing event\n/eventsummary - View signup counts\n/export - Download participant list (Excel)'));
+bot.help((ctx) => {
+    const helpText = `
+*Available Commands:*
 
-// Staff command
-bot.command('roster', async (ctx) => {
-    const args = ctx.message.text.split(' ');
-    if (args[1] && args[1].startsWith('ev_')) {
-        const registrations = await db.listRegistrationsForEvent(args[1].slice(3));
-        if (registrations.length === 0) {
-            return ctx.reply('No registrations yet.');
-        }
+*General:*
+/start - Start the bot (Dashboard selection)
+/profile - View or edit your profile
+/help - Show this help message
 
-        const list = registrations.map(r => `• ${r.participant_name} (${r.user_name})`).join('\n');
-        ctx.reply(`📋 *Roster* (${registrations.length} signed up):\n${list}`, { parse_mode: 'Markdown' });
-    } else {
-        ctx.reply('Usage: /roster ev_<eventId>');
-    }
-});
-
-// Text handler (State machine for registration)
-bot.on('text', async (ctx) => {
-    // Ignore commands handled above
-    if (ctx.message.text.startsWith('/')) {
-        return ctx.reply(getMessage('errors.unknownCommand'));
-    }
-
-    const userId = ctx.from.id;
-    const state = await db.getBotState(userId);
-
-    if (!state) {
-        // Default fallback for unknown text
-        return ctx.reply(getMessage('errors.unknownInput'));
-    }
-
-    switch (state.state) {
-        case 'ASK_NAME':
-            await db.setBotState(userId, 'ASK_EMAIL', state.pending_event_id, {
-                ...state.temp_data,
-                participant_name: ctx.message.text
-            });
-            return ctx.reply(getMessage('prompts.enterEmail'));
-
-        case 'ASK_EMAIL':
-            await db.setBotState(userId, 'CONFIRM', state.pending_event_id, {
-                ...state.temp_data,
-                email: ctx.message.text
-            });
-
-            const event = await db.getEvent(state.pending_event_id);
-            const data = state.temp_data;
-            return ctx.reply(
-                getMessage('prompts.confirmRegistration', {
-                    participantName: data.participant_name,
-                    email: ctx.message.text,
-                    eventTitle: event.title
-                }),
-                {
-                    parse_mode: 'Markdown',
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: getMessage('buttons.confirm'), callback_data: 'confirm' }],
-                            [{ text: getMessage('buttons.edit'), callback_data: 'edit' }]
-                        ]
-                    }
-                }
-            );
-
-        default:
-            return ctx.reply(getMessage('errors.unknownInput'));
-    }
-});
-
-// Final confirmation action
-bot.action('confirm', async (ctx) => {
-    const userId = ctx.from.id;
-    const state = await db.getBotState(userId);
-
-    if (!state || !state.pending_event_id) {
-        return ctx.answerCbQuery(getMessage('errors.startOver'));
-    }
-
-    const registration = await db.createRegistration({
-        eventId: state.pending_event_id,
-        userTelegramId: userId,
-        participantName: state.temp_data.participant_name,
-        participantAge: state.temp_data.participant_age
-    });
-
-    await db.clearBotState(userId);
-
-    const event = await db.getEvent(state.pending_event_id);
-    ctx.editMessageText(
-        getMessage('success.registrationConfirmed', {
-            participantName: state.temp_data.participant_name,
-            eventTitle: event.title,
-            registrationId: registration.id.slice(0, 8)
-        }),
-        { parse_mode: 'Markdown' }
-    );
-});
-
-// Cancellation
-bot.action('cancel', async (ctx) => {
-    const userId = ctx.from.id;
-    await db.clearBotState(userId);
-    ctx.editMessageText('❌ Registration cancelled.');
+*Organiser Tools:*
+/organiser - Access Organiser Dashboard
+/newevent - Create a new event
+/editevent - Edit an existing event
+/eventsummary - View event signups
+/export - Download participant list (.xlsx)
+    `;
+    ctx.reply(helpText, { parse_mode: 'Markdown' });
 });
 
 // Launch bot
@@ -289,6 +122,15 @@ if (process.env.WEBHOOK_DOMAIN) {
     console.log(`Configuring webhook mode: ${webhookUrl}`);
 } else {
     console.log('Configuring polling mode');
+    // Start a dummy HTTP server to satisfy Render's port binding requirement for Web Services
+    const port = process.env.PORT || 3000;
+    http.createServer((req, res) => {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.write('Health check: OK');
+        res.end();
+    }).listen(port, () => {
+        console.log(`Health check server running on port ${port}`);
+    });
 }
 
 bot.launch(launchOptions).then(() => {
