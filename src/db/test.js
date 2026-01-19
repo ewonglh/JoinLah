@@ -1,6 +1,6 @@
 // test-db.js - run with: node test-db.js
 require('dotenv').config();
-const db = require('../db');
+const db = require('./queries');
 
 async function test() {
   try {

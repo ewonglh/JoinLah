@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: joinlah-bot
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: WEBHOOK_DOMAIN
+        sync: false
+      - key: WEBHOOK_SECRET_TOKEN
+        sync: false
+      - key: NODE_VERSION
+        value: 20
