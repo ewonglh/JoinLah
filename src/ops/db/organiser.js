@@ -53,9 +53,41 @@ async function getRegistrationsForEvent(eventId) {
     return data;
 }
 
+async function getEvent(eventId) {
+    const { data, error } = await supabase
+        .from('events')
+        .select('*')
+        .eq('id', eventId.toString())
+        .single();
+
+    if (error) {
+        if (error.code === 'PGRST116') return null;
+        console.error('Error fetching event:', error);
+        return null;
+    }
+    return data;
+}
+
+async function updateEvent(eventId, updates) {
+    const { data, error } = await supabase
+        .from('events')
+        .update(updates)
+        .eq('id', eventId.toString())
+        .select()
+        .single();
+
+    if (error) {
+        console.error('Error updating event:', error);
+        return null;
+    }
+    return data;
+}
+
 module.exports = {
     isAdmin,
     getAllEvents,
     createEvent,
-    getRegistrationsForEvent
+    getRegistrationsForEvent,
+    getEvent,
+    updateEvent
 };
