@@ -1,0 +1,27 @@
+{
+    "errors": {
+        "eventNotFound": "❌ Event not found. Try /start again.",
+        "startOver": "Please start over with /start",
+        "unknownCommand": "Unknown command. Please run /help for a list of commands and their purpose.",
+        "unknownInput": "I'm not sure I understand. Type /help to see what I can do."
+    },
+    "welcome": {
+        "askSelfOrOther": "📅 *{title}*\n{location} • {dateTime}\n\nAre you signing up for yourself or someone else?",
+        "regular": "👋 Welcome! Click any event signup link to register."
+    },
+    "prompts": {
+        "enterName": "Please enter the {who} full name:",
+        "enterEmail": "Great! Now enter your email:",
+        "confirmRegistration": "✅ *Confirm registration*\n\n👤 {participantName}\n📧 {email}\n📅 {eventTitle}\n\nIs this correct?"
+    },
+    "success": {
+        "registrationConfirmed": "🎉 *Registration confirmed!*\n\n👤 {participantName}\n📅 {eventTitle}\nID: {registrationId}"
+    },
+    "buttons": {
+        "myself": "👤 Myself",
+        "someoneElse": "❤️ Someone else",
+        "cancel": "❌ Cancel",
+        "confirm": "✅ Yes, register me!",
+        "edit": "❌ Edit details"
+    }
+}
