@@ -20,25 +20,33 @@ async function createRegistration({ eventId, userTelegramId, participantName, pa
 }
 
 async function listRegistrationsForEvent(eventId) {
-    // Join users and events tables
-    const { data, error } = await supabase
+    const { data: registrations, error } = await supabase
         .from('registrations')
-        .select(`
-      *,
-      users!user_telegram_id(name),
-      events!event_id(title)
-    `)
+        .select('*')
         .eq('event_id', eventId)
         .order('created_at', { ascending: true });
 
     if (error) throw error;
 
-    // Map to flatten structure expected by the app (user_name, event_title)
-    // Check src/index.js usage: r.participant_name, r.user_name
-    return data.map(r => ({
-        ...r,
-        user_name: r.users?.name,
-        event_title: r.events?.title
+    // Manually fetch and merge data
+    return Promise.all(registrations.map(async (r) => {
+        const { data: user } = await supabase
+            .from('users')
+            .select('name')
+            .eq('telegram_user_id', r.user_telegram_id)
+            .single();
+
+        const { data: event } = await supabase
+            .from('events')
+            .select('title')
+            .eq('id', r.event_id)
+            .single();
+
+        return {
+            ...r,
+            user_name: user?.name,
+            event_title: event?.title
+        };
     }));
 }
 
@@ -53,26 +61,26 @@ async function getEventRegistrationCount(eventId) {
 }
 
 async function getRegistrationsForExport(eventId) {
-    const { data, error } = await supabase
+    const { data: registrations, error } = await supabase
         .from('registrations')
-        .select(`
-      participant_name,
-      participant_age,
-      status,
-      notes,
-      created_at,
-      users!user_telegram_id (
-        name,
-        telegram_username,
-        phone,
-        email
-      )
-    `)
+        .select('participant_name, participant_age, status, notes, created_at, user_telegram_id')
         .eq('event_id', eventId)
         .order('created_at', { ascending: true });
 
     if (error) throw error;
-    return data;
+
+    return Promise.all(registrations.map(async (r) => {
+        const { data: user } = await supabase
+            .from('users')
+            .select('name, telegram_username, phone, email')
+            .eq('telegram_user_id', r.user_telegram_id)
+            .single();
+
+        return {
+            ...r,
+            users: user
+        };
+    }));
 }
 
 module.exports = {
