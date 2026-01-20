@@ -43,15 +43,9 @@ async function updateEvent(eventId, updates) {
 }
 
 async function getEvent(eventId) {
-    const { data, error } = await supabase
+    const { data: event, error } = await supabase
         .from('events')
-        .select(`
-            *,
-            organiser:users!organiser_telegram_id (
-                name,
-                telegram_username
-            )
-        `)
+        .select('*')
         .eq('id', eventId)
         .single();
 
@@ -59,7 +53,19 @@ async function getEvent(eventId) {
         if (error.code === 'PGRST116') return null;
         throw error;
     }
-    return data;
+
+    // Manually fetch organiser details since relationship is not defined in DB
+    if (event && event.organiser_telegram_id) {
+        const { data: user } = await supabase
+            .from('users')
+            .select('name, telegram_username')
+            .eq('telegram_user_id', event.organiser_telegram_id)
+            .single();
+        
+        event.organiser = user;
+    }
+
+    return event;
 }
 
 async function getAllEvents() {
